@@ -20,18 +20,26 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
+const { S3Client } = require("@aws-sdk/client-s3");
+const multerS3 = require("multer-s3");
+
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || "eu-north-1",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname.replace(/\s+/g, '_'));
-  }
 });
 
 const upload = multer({
-  storage: storage,
+  storage: multerS3({
+    s3: s3,
+    bucket: process.env.AWS_BUCKET_NAME || "smart-learning-platform-allwin",
+    key: function (req, file, cb) {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, "uploads/" + uniqueSuffix + '-' + file.originalname.replace(/\s+/g, '_'));
+    }
+  }),
   limits: { fileSize: 25 * 1024 * 1024 },
 });
 
@@ -549,7 +557,7 @@ app.post("/api/assignments/:id/submit", authenticate, requireRole("student"), up
           status: "submitted",
           text: req.body.text || "",
           fileName: req.file?.originalname || "",
-          fileUrl: req.file ? `/uploads/${req.file.filename}` : "",
+          fileUrl: req.file ? req.file.location : "",
         },
       });
       await tx.assignment.update({
@@ -565,7 +573,7 @@ app.post("/api/assignments/:id/submit", authenticate, requireRole("student"), up
         status: "submitted",
         text: req.body.text || existing.text,
         ...(req.file
-          ? { fileName: req.file.originalname, fileUrl: `/uploads/${req.file.filename}` }
+          ? { fileName: req.file.originalname, fileUrl: req.file.location }
           : {}),
         submittedAt: new Date(),
       },
@@ -701,7 +709,7 @@ app.post("/api/resources", authenticate, requireRole("teacher"), upload.single("
       name: req.file?.originalname || req.body.name || "Untitled Resource",
       type: (req.file?.originalname || req.body.name || "file").split(".").pop().toLowerCase(),
       size: req.file ? `${(req.file.size / 1024 / 1024).toFixed(1)} MB` : req.body.size || "0 MB",
-      fileUrl: req.file ? `/uploads/${req.file.filename}` : "",
+      fileUrl: req.file ? req.file.location : "",
       downloads: 0,
       color: "#6366F1",
       date: "Just now",
