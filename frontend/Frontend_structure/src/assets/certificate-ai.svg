@@ -1,0 +1,36 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" rx="28" fill="#FDFCF8"/>
+  <rect x="38" y="38" width="1124" height="724" rx="20" fill="#FFFFFF" stroke="#D7B56D" stroke-width="8"/>
+  <rect x="66" y="66" width="1068" height="668" rx="12" stroke="#0F766E" stroke-width="3"/>
+  <path d="M96 116H1104" stroke="#D7B56D" stroke-width="2" stroke-dasharray="16 12"/>
+  <path d="M96 684H1104" stroke="#D7B56D" stroke-width="2" stroke-dasharray="16 12"/>
+  <circle cx="600" cy="157" r="56" fill="#064E3B"/>
+  <circle cx="600" cy="157" r="42" stroke="#D7B56D" stroke-width="3"/>
+  <path d="M580 157L594 171L623 135" stroke="#FDFCF8" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="600" y="255" text-anchor="middle" fill="#0F172A" font-family="Georgia, 'Times New Roman', serif" font-size="58" font-weight="700" letter-spacing="4">CERTIFICATE</text>
+  <text x="600" y="302" text-anchor="middle" fill="#047857" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="7">OF ACHIEVEMENT</text>
+  <text x="600" y="367" text-anchor="middle" fill="#64748B" font-family="Arial, sans-serif" font-size="22">This certificate is proudly presented to</text>
+  <text x="600" y="438" text-anchor="middle" fill="#111827" font-family="Georgia, 'Times New Roman', serif" font-size="62" font-weight="700">Alex Johnson</text>
+  <path d="M368 459H832" stroke="#D7B56D" stroke-width="3"/>
+  <text x="600" y="511" text-anchor="middle" fill="#334155" font-family="Arial, sans-serif" font-size="24">for successfully completing</text>
+  <text x="600" y="559" text-anchor="middle" fill="#064E3B" font-family="Arial, sans-serif" font-size="35" font-weight="800">Artificial Intelligence Foundations</text>
+  <g opacity=".9">
+    <path d="M173 171C206 142 238 142 271 171C238 200 206 200 173 171Z" fill="#D1FAE5"/>
+    <path d="M1027 171C994 142 962 142 929 171C962 200 994 200 1027 171Z" fill="#D1FAE5"/>
+    <path d="M173 629C206 658 238 658 271 629C238 600 206 600 173 629Z" fill="#D1FAE5"/>
+    <path d="M1027 629C994 658 962 658 929 629C962 600 994 600 1027 629Z" fill="#D1FAE5"/>
+  </g>
+  <g>
+    <path d="M904 612L933 674L961 612" fill="#DC2626"/>
+    <circle cx="933" cy="603" r="54" fill="#D7B56D"/>
+    <circle cx="933" cy="603" r="39" fill="#FDE68A"/>
+    <text x="933" y="611" text-anchor="middle" fill="#92400E" font-family="Arial, sans-serif" font-size="22" font-weight="900">A+</text>
+  </g>
+  <path d="M170 626H392" stroke="#0F172A" stroke-width="2"/>
+  <text x="281" y="658" text-anchor="middle" fill="#475569" font-family="Arial, sans-serif" font-size="17" font-weight="700">Prof. James Park</text>
+  <text x="281" y="681" text-anchor="middle" fill="#94A3B8" font-family="Arial, sans-serif" font-size="13">Lead Instructor</text>
+  <path d="M808 626H1030" stroke="#0F172A" stroke-width="2"/>
+  <text x="919" y="658" text-anchor="middle" fill="#475569" font-family="Arial, sans-serif" font-size="17" font-weight="700">June 04, 2026</text>
+  <text x="919" y="681" text-anchor="middle" fill="#94A3B8" font-family="Arial, sans-serif" font-size="13">Issued Date</text>
+  <text x="600" y="715" text-anchor="middle" fill="#94A3B8" font-family="Arial, sans-serif" font-size="14">Credential ID: JAWA-AI-2026-1048</text>
+</svg>

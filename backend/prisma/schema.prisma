@@ -1,0 +1,226 @@
+// Prisma schema for the JAWA EDTECH / Smart Learning Platform backend.
+// Replaces the former JSON file store (backend/data/store.json).
+// Response shapes are kept identical to the old store so the frontend is untouched:
+//  - id-list fields stay as Postgres scalar arrays (String[])
+//  - flexible presentation blobs stay as jsonb (Json)
+//  - only genuine timestamps are DateTime; display date strings stay String
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?
+  role         String
+  avatarColor  String?
+  passwordHash String?
+  authProvider String?
+  profile      Json?
+  createdAt    DateTime @default(now())
+
+  @@index([role])
+}
+
+model Course {
+  id             String   @id @default(cuid())
+  teacherId      String
+  title          String
+  name           String
+  category       String?
+  level          String?
+  description    String?
+  summary        String?
+  price          Int      @default(0)
+  duration       String?
+  lessons        Int      @default(0)
+  modules        Json?
+  tags           String[]
+  icon           String?
+  accent         String?
+  bg             String?
+  status         String   @default("draft")
+  isPublic       Boolean  @default(true)
+  hasCertificate Boolean  @default(false)
+  rating         Float    @default(0)
+  students       Int      @default(0)
+  progress       Int      @default(0)
+  revenue        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@index([teacherId])
+  @@index([status])
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  studentId String
+  courseId  String
+  progress  Int      @default(0)
+  grade     String?
+  score     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([studentId])
+  @@index([courseId])
+}
+
+model Assignment {
+  id         String   @id @default(cuid())
+  title      String
+  courseId   String?
+  course     String?
+  teacherId  String
+  due        String?
+  points     Int      @default(0)
+  submitted  Int      @default(0)
+  total      Int      @default(0)
+  graded     Int      @default(0)
+  status     String   @default("upcoming")
+  studentIds String[]
+
+  @@index([teacherId])
+  @@index([courseId])
+}
+
+model Submission {
+  id           String    @id @default(cuid())
+  assignmentId String
+  studentId    String
+  status       String    @default("submitted")
+  text         String?
+  fileName     String?
+  fileUrl      String?
+  score        Int?
+  feedback     String?
+  submittedAt  DateTime  @default(now())
+  gradedAt     DateTime?
+
+  @@index([assignmentId])
+  @@index([studentId])
+}
+
+model LiveClass {
+  id          String   @id @default(cuid())
+  teacherId   String
+  courseId    String?
+  course      String?
+  title       String
+  date        String?
+  time        String?
+  duration    String?
+  status      String   @default("Scheduled")
+  roomName    String?
+  meetingUrl  String?
+  description String?
+  settings    Json?
+  studentIds  String[]
+
+  @@index([teacherId])
+}
+
+model Attendance {
+  id        String   @id @default(cuid())
+  classId   String
+  userId    String
+  status    String   @default("present")
+  createdAt DateTime @default(now())
+
+  @@index([classId])
+  @@index([userId])
+}
+
+model Resource {
+  id        String   @id @default(cuid())
+  teacherId String
+  courseId  String?
+  course    String?
+  name      String
+  type      String?
+  icon      String?
+  size      String?
+  date      String?
+  downloads Int      @default(0)
+  color     String?
+  fileUrl   String?
+  createdAt DateTime @default(now())
+
+  @@index([teacherId])
+}
+
+model Grade {
+  id        String @id @default(cuid())
+  studentId String
+  course    String?
+  teacher   String?
+  progress  Int    @default(0)
+  grade     String?
+  score     Int    @default(0)
+  color     String?
+
+  @@index([studentId])
+}
+
+model Conversation {
+  id              String    @id @default(cuid())
+  type            String    @default("private")
+  courseId        String?
+  courseName      String?
+  teacherId       String?
+  participantIds  String[]
+  unreadByUserId  Json      @default("{}")
+  updatedAt       DateTime  @default(now())
+  messages        Message[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  senderId       String
+  text           String
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model Notification {
+  id       String  @id @default(cuid())
+  userId   String
+  type     String?
+  icon     String?
+  color    String?
+  title    String
+  body     String?
+  time     String?
+  read     Boolean @default(false)
+  category String?
+
+  @@index([userId])
+}
+
+model Certificate {
+  id           String  @id @default(cuid())
+  studentId    String
+  courseId     String?
+  teacherId    String?
+  title        String
+  issuer       String?
+  issued       String?
+  status       String  @default("Earned")
+  credentialId String?
+  score        String?
+  hours        Int     @default(0)
+  accent       String?
+
+  @@index([studentId])
+  @@index([credentialId])
+}

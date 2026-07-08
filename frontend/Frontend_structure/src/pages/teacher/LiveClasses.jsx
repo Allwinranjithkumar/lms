@@ -1,0 +1,426 @@
+import { useState, useEffect, useRef } from "react";
+import { getLiveClasses, createLiveClass, endLiveClass, getTeacherCourses } from "../../services/api";
+import { JitsiMeeting } from "@jitsi/react-sdk";
+
+const defaultToggles = {
+  recording: true,
+  chat: true,
+  screenShare: true,
+  whiteboard: true,
+  aiAssistant: true,
+  attendance: true,
+};
+
+export default function LiveClasses() {
+  const [toggles, setToggles] = useState(defaultToggles);
+  const [classes, setClasses] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeClass, setActiveClass] = useState(null); // The class currently being hosted
+  const meetingTabRef = useRef(null);
+  
+  // Default course selection will be the first one once loaded
+  const [formData, setFormData] = useState({ 
+    title: "", 
+    courseId: "", 
+    date: new Date().toISOString().split('T')[0], 
+    time: "10:00", 
+    duration: 60, 
+    desc: "" 
+  });
+
+  const fetchClasses = () => {
+    setLoading(true);
+    getLiveClasses()
+      .then(res => setClasses(res.data || res || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  const fetchCourses = () => {
+    getTeacherCourses().then(res => {
+      const courseList = res.data || [];
+      setCourses(courseList);
+      if (courseList.length > 0 && !formData.courseId) {
+        setFormData(prev => ({ ...prev, courseId: courseList[0].id }));
+      }
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchClasses();
+    fetchCourses();
+  }, []);
+
+  const handleSchedule = async (e, instant = false) => {
+    if (e) e.preventDefault();
+    if (!formData.courseId && courses.length > 0) {
+      formData.courseId = courses[0].id;
+    }
+    
+    try {
+      const payload = {
+        title: formData.title || (instant ? "Instant Class" : "Untitled"),
+        courseId: formData.courseId,
+        date: instant ? new Date().toISOString().split('T')[0] : formData.date,
+        time: instant ? new Date().toTimeString().slice(0, 5) : formData.time,
+        duration: `${formData.duration} min`,
+        description: formData.desc,
+        status: instant ? "active" : "scheduled",
+        settings: toggles,
+      };
+
+      const res = await createLiveClass(payload);
+      
+      if (instant) {
+        setActiveClass(res.data);
+      } else {
+        alert("Class scheduled successfully!");
+      }
+      fetchClasses();
+    } catch (err) {
+      alert("Error creating class: " + (err.message || "Failed"));
+    }
+  };
+
+  const startInstantClass = () => {
+    handleSchedule(null, true);
+  };
+
+  const startScheduledClass = (cls) => {
+    setActiveClass(cls);
+  };
+
+  const handleEndClass = async (id) => {
+    try {
+      await endLiveClass(id);
+      setActiveClass(null);
+      if (meetingTabRef.current && !meetingTabRef.current.closed) {
+        meetingTabRef.current.close();
+        meetingTabRef.current = null;
+      }
+      fetchClasses();
+    } catch (err) {
+      alert("Failed to end class: " + err.message);
+    }
+  };
+
+  const toggle = (key) => {
+    setToggles((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  // If a class is active, render the active class dashboard
+  if (activeClass) {
+    return (
+      <div className="lc-page" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 73px)", justifyContent: "center", alignItems: "center", background: "var(--surface)", textAlign: "center" }}>
+        <div style={{ padding: "40px", background: "var(--background)", borderRadius: "16px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)", maxWidth: "500px", width: "100%" }}>
+          <div style={{ display: "inline-block", background: "#FEE2E2", color: "#EF4444", padding: "8px 16px", borderRadius: "20px", fontWeight: "bold", marginBottom: "20px" }}>
+            <i className="fa-solid fa-video" style={{ marginRight: "8px" }}></i> 🔴 LIVE NOW
+          </div>
+          <h2 style={{ fontSize: "24px", marginBottom: "8px" }}>{activeClass.title}</h2>
+          <p style={{ color: "var(--muted)", marginBottom: "30px" }}>{activeClass.course}</p>
+          
+          <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+            <button 
+              onClick={() => { meetingTabRef.current = window.open(activeClass.meetingUrl, "_blank"); }}
+              className="lc-btn lc-btn-primary"
+              style={{ padding: "16px", fontSize: "16px", justifyContent: "center" }}
+            >
+              <i className="fa-solid fa-arrow-up-right-from-square"></i>
+              Enter Jitsi Meeting Room
+            </button>
+            <button 
+              onClick={() => handleEndClass(activeClass.id)}
+              className="lc-btn"
+              style={{ padding: "16px", fontSize: "16px", justifyContent: "center", background: "#EF4444", color: "white", border: "none" }}
+            >
+              <i className="fa-solid fa-phone-slash"></i>
+              End Class for All
+            </button>
+          </div>
+          <p style={{ fontSize: "13px", color: "var(--muted)", marginTop: "20px" }}>
+            Note: We open Jitsi in a new tab to bypass the 5-minute embedding restriction, giving you 100% free and unlimited meeting time!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Normal Dashboard View
+  const todayClasses = classes.filter((item) => {
+    if (item.status === "completed") return false;
+    const date = getClassDate(item);
+    return date && date.toDateString() === new Date().toDateString();
+  });
+  
+  const upcomingClasses = classes.filter((item) => {
+    if (item.status === "completed" || item.status === "active") return false;
+    const date = getClassDate(item);
+    return date && date > new Date();
+  });
+  
+  const activeCount = classes.filter(c => c.status === "active").length;
+  const completedCount = classes.filter(c => c.status === "completed").length;
+  const totalStudents = classes.reduce((sum, c) => sum + (c.studentIds?.length || 0), 0);
+
+  return (
+    <div className="lc-page">
+      <section className="lc-header">
+        <div>
+          <span className="lc-eyebrow">AI-powered live classroom</span>
+          <h1>Live Classes</h1>
+          <p>Schedule, manage, and host AI-powered virtual classrooms via Jitsi.</p>
+        </div>
+        <div className="lc-header-actions">
+          <button onClick={startInstantClass} className="lc-btn lc-btn-primary" type="button" disabled={courses.length === 0}>
+            <i className="fa-solid fa-bolt"></i>
+            Start Instant Class
+          </button>
+        </div>
+      </section>
+
+      <section className="lc-overview-grid">
+        {[
+          { icon: "fa-solid fa-video", value: todayClasses.length + activeCount, label: "Today's Classes", trend: "Scheduled" },
+          { icon: "fa-solid fa-calendar-days", value: upcomingClasses.length, label: "Upcoming Classes", trend: "Next 7 days" },
+          { icon: "fa-solid fa-users", value: totalStudents, label: "Total Enrollments", trend: "Across classes" },
+          { icon: "fa-solid fa-calendar-check", value: completedCount, label: "Completed Sessions", trend: "Historical" },
+        ].map((card) => (
+          <article key={card.label} className="lc-overview-card">
+            <div className="lc-card-top">
+              <div className="lc-card-icon">
+                <i className={card.icon}></i>
+              </div>
+              <span>{card.trend}</span>
+            </div>
+            <strong>{card.value}</strong>
+            <p>{card.label}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="lc-section">
+        <div className="lc-section-head">
+          <div>
+            <span className="lc-eyebrow">Today</span>
+            <h2>Today's Live Classes</h2>
+          </div>
+        </div>
+        <div className="lc-class-grid">
+          {!loading && todayClasses.length === 0 && <p className="sd-empty">No classes scheduled for today.</p>}
+          {todayClasses.map((item) => (
+            <article key={item.id} className="lc-class-card" style={{ border: item.status === 'active' ? '2px solid var(--primary)' : '' }}>
+              <div className="lc-class-main">
+                <div className="lc-class-badge" style={{ background: item.status === 'active' ? '#FEE2E2' : '', color: item.status === 'active' ? '#EF4444' : '' }}>
+                  <i className="fa-solid fa-video"></i>
+                </div>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p>{item.course}</p>
+                </div>
+              </div>
+              <div className="lc-class-meta">
+                <span><i className="fa-regular fa-clock"></i>{formatClassTime(item)}</span>
+                <span><i className="fa-solid fa-hourglass-half"></i>{formatClassDuration(item)}</span>
+                <span><i className="fa-solid fa-users"></i>{item.studentIds?.length || 0} enrolled</span>
+              </div>
+              <div className="lc-class-actions">
+                <span className={`lc-status ${(item.status || 'scheduled').toLowerCase()}`}>
+                  {item.status === 'active' ? '🔴 LIVE NOW' : (item.status || "Scheduled")}
+                </span>
+                <button onClick={() => startScheduledClass(item)} className="lc-btn lc-btn-primary" type="button">
+                  {item.status === 'active' ? 'Join Class' : 'Start Class'}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="lc-split-grid">
+        <form className="lc-section lc-schedule-card" onSubmit={handleSchedule}>
+          <div className="lc-section-head">
+            <div>
+              <span className="lc-eyebrow">Planner</span>
+              <h2>Schedule Class</h2>
+            </div>
+          </div>
+          <div className="lc-form-grid">
+            <label>
+              <span>Class Title</span>
+              <input value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Advanced AI Revision Session" required />
+            </label>
+            <label>
+              <span>Select Course</span>
+              <select value={formData.courseId} onChange={e => setFormData({...formData, courseId: e.target.value})} required>
+                {courses.length === 0 && <option value="">No courses available</option>}
+                {courses.map(c => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Date</span>
+              <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required />
+            </label>
+            <label>
+              <span>Start Time</span>
+              <input type="time" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} required />
+            </label>
+            <label>
+              <span>Duration (min)</span>
+              <input type="number" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} required />
+            </label>
+            <label className="lc-full">
+              <span>Description</span>
+              <textarea value={formData.desc} onChange={e => setFormData({...formData, desc: e.target.value})} placeholder="Review concepts..." />
+            </label>
+          </div>
+          <div className="lc-toggle-grid">
+            {[
+              ["recording", "Enable Recording"],
+              ["chat", "Enable Chat"],
+              ["screenShare", "Enable Screen Share"],
+              ["whiteboard", "Enable Whiteboard"],
+              ["aiAssistant", "Enable AI Assistant"],
+              ["attendance", "Track Attendance"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className={`lc-toggle ${toggles[key] ? "on" : ""}`}
+                type="button"
+                onClick={() => toggle(key)}
+              >
+                <span>{label}</span>
+                <span className="lc-toggle-knob"></span>
+              </button>
+            ))}
+          </div>
+          <button className="lc-btn lc-btn-primary lc-create-btn" type="submit" disabled={courses.length === 0}>
+            Create Schedule
+          </button>
+        </form>
+
+        <section className="lc-section">
+          <div className="lc-section-head">
+            <div>
+              <span className="lc-eyebrow">Next up</span>
+              <h2>Upcoming Classes</h2>
+            </div>
+          </div>
+          <div className="lc-upcoming-list">
+            {!loading && upcomingClasses.length === 0 && <p className="sd-empty">No upcoming classes.</p>}
+            {upcomingClasses.map((item) => (
+              <article key={item.id} className="lc-upcoming-item">
+                <div className="lc-date-pill">
+                  <strong>{formatClassDate(item)}</strong>
+                  <span>{formatClassTime(item)}</span>
+                </div>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p>{item.studentIds?.length || 0} students enrolled</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </section>
+
+      <section className="lc-split-grid">
+        <section className="lc-section">
+          <div className="lc-section-head">
+            <div>
+              <span className="lc-eyebrow">History</span>
+              <h2>Past Sessions</h2>
+            </div>
+          </div>
+          <div className="lc-recording-grid">
+            {classes.filter(c => c.status === "completed").length === 0 && <p className="sd-empty">No past sessions.</p>}
+            {classes.filter(c => c.status === "completed").map((item) => (
+              <article key={item.id} className="lc-recording-card" style={{ padding: '20px', background: 'var(--surface)', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '10px' }}>
+                  <div className="lc-recording-thumb" style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B7280' }}>
+                    <i className="fa-solid fa-calendar-check"></i>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px' }}>{item.title}</h3>
+                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>{item.course}</p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '15px', fontSize: '13px', color: 'var(--muted)', marginTop: '15px' }}>
+                  <span><i className="fa-regular fa-clock" style={{ marginRight: '5px' }}></i>{formatClassDate(item)}</span>
+                  <span><i className="fa-solid fa-users" style={{ marginRight: '5px' }}></i>{item.studentIds?.length || 0} attended</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="lc-section">
+          <div className="lc-section-head">
+            <div>
+              <span className="lc-eyebrow">Analytics</span>
+              <h2>Attendance Analytics</h2>
+            </div>
+          </div>
+          <div className="lc-analytics-list">
+            {[
+              { label: "Average Attendance", value: "91%", percent: 91 },
+              { label: "On-Time Joiners", value: "85%", percent: 85 },
+              { label: "Engagement Score", value: "78%", percent: 78 },
+            ].map((item) => (
+              <div key={item.label} className="lc-analytics-item" style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+                <div className="lc-progress" style={{ height: '8px', background: 'var(--border)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <span style={{ display: 'block', height: '100%', width: `${item.percent}%`, background: 'var(--primary)', borderRadius: '4px' }}></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </section>
+    </div>
+  );
+}
+
+function getClassDate(item) {
+  const raw = item.scheduledAt || item.scheduledFor || (item.date && `${item.date}T${to24HourTime(item.time) || "00:00"}:00`);
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.valueOf()) ? null : date;
+}
+
+function formatClassDate(item) {
+  const date = getClassDate(item);
+  return date ? date.toLocaleDateString([], { month: "short", day: "numeric" }) : "TBD";
+}
+
+function formatClassTime(item) {
+  const date = getClassDate(item);
+  if (date) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return item.time || "TBD";
+}
+
+function formatClassDuration(item) {
+  const duration = String(item.duration || item.durationMinutes || "60 min");
+  return /\bmin\b/i.test(duration) ? duration : `${duration} min`;
+}
+
+function to24HourTime(value) {
+  const raw = String(value || "").trim();
+  const simple = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (simple) return `${simple[1].padStart(2, "0")}:${simple[2]}`;
+
+  const meridian = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (!meridian) return "";
+
+  let hour = Number(meridian[1]);
+  const minute = meridian[2] || "00";
+  const period = meridian[3].toUpperCase();
+  if (period === "PM" && hour < 12) hour += 12;
+  if (period === "AM" && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, "0")}:${minute}`;
+}
