@@ -11,8 +11,8 @@ copy .env.example .env          # then set DATABASE_URL (default matches docker-
 # Start Postgres (from the repo root)
 docker compose up -d
 
-# Create the schema and generate the Prisma client
-npx prisma migrate dev --name init
+# Create the schema from committed migrations and generate the Prisma client
+npx prisma migrate dev
 
 # Load demo data
 npm run seed
@@ -25,7 +25,12 @@ The API runs on `http://localhost:8000` by default.
 ### Database
 
 - Schema lives in `prisma/schema.prisma`; the Prisma client singleton is in `src/db/prisma.js`.
+- Migrations live in `prisma/migrations`; use `npm run prisma:migrate` locally and `npm run prisma:migrate:deploy` in production.
+- If a production database was created before migrations were committed, baseline the existing schema once with:
+  `npx prisma migrate resolve --applied 20260708170000_init`
 - `DATABASE_URL` points Prisma at Postgres (see `docker-compose.yml` for a local instance).
+- For Neon on Render, use the pooled connection string with `sslmode=require`. If the copied Neon URL includes
+  `channel_binding=require`, the backend strips that runtime-only parameter before creating the Prisma client.
 - Writes use `prisma.$transaction` for atomicity; `loadStore()` in `src/utils/store.js` returns a
   consistent snapshot shaped like the former JSON store so response bodies are unchanged.
 - Reseed anytime with `npm run seed` (wipes and reloads demo content).

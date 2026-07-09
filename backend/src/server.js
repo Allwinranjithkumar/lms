@@ -662,6 +662,20 @@ app.post("/api/live-classes", authenticate, requireRole("teacher"), asyncHandler
   res.status(201).json({ data: formatLiveClass(liveClass, await loadStore()) });
 }));
 
+app.patch("/api/live-classes/:id/start", authenticate, requireRole("teacher"), asyncHandler(async (req, res) => {
+  const liveClass = await prisma.liveClass.findUnique({ where: { id: req.params.id } });
+  if (!liveClass) throw new ApiError(404, "Live class not found.");
+  if (liveClass.teacherId !== req.user.id) {
+    throw new ApiError(403, "You can only manage your own live classes.");
+  }
+
+  const updated = await prisma.liveClass.update({
+    where: { id: liveClass.id },
+    data: { status: "active" },
+  });
+  res.json({ data: formatLiveClass(updated, await loadStore()) });
+}));
+
 app.patch("/api/live-classes/:id/end", authenticate, requireRole("teacher"), asyncHandler(async (req, res) => {
   const liveClass = await prisma.liveClass.findUnique({ where: { id: req.params.id } });
   if (!liveClass) throw new ApiError(404, "Live class not found.");
@@ -682,14 +696,25 @@ app.post("/api/live-classes/:id/attendance", authenticate, asyncHandler(async (r
     throw new ApiError(403, "You do not have access to this live class.");
   }
 
-  const attendance = await prisma.attendance.create({
+  const existing = await prisma.attendance.findFirst({
+    where: {
+      classId: liveClass.id,
+      userId: req.user.id,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const attendance = existing || await prisma.attendance.create({
     data: {
-      classId: req.params.id,
+      classId: liveClass.id,
       userId: req.user.id,
       status: req.body.status || "present",
     },
   });
-  res.status(201).json({ data: attendance });
+
+  const store = await loadStore();
+  const updatedClass = store.liveClasses.find((item) => item.id === liveClass.id) || liveClass;
+  res.status(existing ? 200 : 201).json({ data: attendance, class: formatLiveClass(updatedClass, store) });
 }));
 
 app.get("/api/resources", authenticate, asyncHandler(async (req, res) => {
@@ -1181,7 +1206,9 @@ function enrichCourse(course, store) {
 function formatLiveClass(liveClass, store) {
   const teacher = store.users.find((user) => user.id === liveClass.teacherId);
   const scheduledAt = liveClass.scheduledAt || liveClass.scheduledFor || scheduledAtFromParts(liveClass.date, liveClass.time);
-  const attendeeCount = Array.isArray(liveClass.studentIds) ? liveClass.studentIds.length : 0;
+  const enrolledStudentIds = Array.isArray(liveClass.studentIds) ? liveClass.studentIds : [];
+  const joinedStudents = joinedStudentsForLiveClass(liveClass.id, store);
+  const attendeeCount = joinedStudents.length;
 
   return {
     ...liveClass,
@@ -1189,9 +1216,33 @@ function formatLiveClass(liveClass, store) {
     scheduledFor: scheduledAt,
     teacher: teacher?.name || "Instructor",
     instructor: teacher?.name || "Instructor",
-    attendees: liveClass.attendees ?? attendeeCount,
+    attendees: attendeeCount,
+    attendeeCount,
+    enrolledCount: enrolledStudentIds.length,
+    joinedStudents,
     durationMinutes: durationMinutes(liveClass.duration),
   };
+}
+
+function joinedStudentsForLiveClass(classId, store) {
+  const seen = new Set();
+  return (store.attendance || [])
+    .filter((record) => record.classId === classId && record.status !== "left")
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .reduce((students, record) => {
+      if (seen.has(record.userId)) return students;
+      const user = store.users.find((item) => item.id === record.userId);
+      if (!user || user.role !== "student") return students;
+      seen.add(record.userId);
+      students.push({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        joinedAt: record.createdAt,
+        status: record.status,
+      });
+      return students;
+    }, []);
 }
 
 function scheduledAtFromParts(date, time) {

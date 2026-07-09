@@ -1,4 +1,11 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const DEFAULT_API_BASE_URL = "http://localhost:8000/api";
+
+function normalizeApiBaseUrl(value) {
+  const baseUrl = String(value || DEFAULT_API_BASE_URL).trim().replace(/\/+$/, "");
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_URL);
 
 const SESSION_KEY = "jawa-edtech-session";
 
@@ -163,8 +170,16 @@ export function createLiveClass(payload) {
   return apiRequest("/live-classes", { method: "POST", body: payload });
 }
 
+export function startLiveClass(id) {
+  return apiRequest(`/live-classes/${id}/start`, { method: "PATCH" });
+}
+
 export function endLiveClass(id) {
   return apiRequest(`/live-classes/${id}/end`, { method: "PATCH" });
+}
+
+export function markLiveClassAttendance(id, payload = {}) {
+  return apiRequest(`/live-classes/${id}/attendance`, { method: "POST", body: payload });
 }
 
 // ─── Assignments ───────────────────────────────────────────────────────────
@@ -207,7 +222,7 @@ export function deleteResource(id) {
 
 export function getResourceDownloadUrl(id) {
   const token = getSession()?.token || "";
-  return `${API_URL}/resources/${id}/download?token=${token}`;
+  return `${API_BASE_URL}/resources/${id}/download?token=${token}`;
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────

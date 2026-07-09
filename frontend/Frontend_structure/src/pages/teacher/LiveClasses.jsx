@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getLiveClasses, createLiveClass, endLiveClass, getTeacherCourses } from "../../services/api";
+import { getLiveClasses, createLiveClass, startLiveClass, endLiveClass, getTeacherCourses, getSession } from "../../services/api";
 import { JitsiMeeting } from "@jitsi/react-sdk";
 
 const defaultToggles = {
@@ -11,13 +11,26 @@ const defaultToggles = {
   attendance: true,
 };
 
+const jitsiConfig = {
+  prejoinPageEnabled: false,
+  startWithAudioMuted: false,
+  startWithVideoMuted: false,
+};
+
+const jitsiInterfaceConfig = {
+  SHOW_JITSI_WATERMARK: false,
+  SHOW_WATERMARK_FOR_GUESTS: false,
+};
+
 export default function LiveClasses() {
   const [toggles, setToggles] = useState(defaultToggles);
   const [classes, setClasses] = useState([]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeClass, setActiveClass] = useState(null); // The class currently being hosted
+  const [jitsiReady, setJitsiReady] = useState(false);
   const meetingTabRef = useRef(null);
+  const currentUser = getSession()?.user || {};
   
   // Default course selection will be the first one once loaded
   const [formData, setFormData] = useState({ 
@@ -29,12 +42,18 @@ export default function LiveClasses() {
     desc: "" 
   });
 
-  const fetchClasses = () => {
-    setLoading(true);
-    getLiveClasses()
-      .then(res => setClasses(res.data || res || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const fetchClasses = (silent = false) => {
+    if (!silent) setLoading(true);
+    return getLiveClasses()
+      .then(res => {
+        const classList = res.data || res || [];
+        setClasses(classList);
+        return classList;
+      })
+      .catch(() => [])
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
   const fetchCourses = () => {
@@ -51,6 +70,27 @@ export default function LiveClasses() {
     fetchClasses();
     fetchCourses();
   }, []);
+
+  useEffect(() => {
+    if (!activeClass?.id) return undefined;
+
+    const interval = setInterval(() => {
+      fetchClasses(true).then((classList) => {
+        const latest = classList.find((item) => item.id === activeClass.id);
+        if (!latest || latest.status === "completed") {
+          setActiveClass(null);
+          return;
+        }
+        setActiveClass(latest);
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeClass?.id]);
+
+  useEffect(() => {
+    setJitsiReady(false);
+  }, [activeClass?.id]);
 
   const handleSchedule = async (e, instant = false) => {
     if (e) e.preventDefault();
@@ -87,8 +127,14 @@ export default function LiveClasses() {
     handleSchedule(null, true);
   };
 
-  const startScheduledClass = (cls) => {
-    setActiveClass(cls);
+  const startScheduledClass = async (cls) => {
+    try {
+      const res = cls.status === "active" ? { data: cls } : await startLiveClass(cls.id);
+      setActiveClass(res.data || cls);
+      fetchClasses(true);
+    } catch (err) {
+      alert("Failed to start class: " + (err.message || "Failed"));
+    }
   };
 
   const handleEndClass = async (id) => {
@@ -105,6 +151,15 @@ export default function LiveClasses() {
     }
   };
 
+  const returnToMeetingList = () => {
+    setActiveClass(null);
+    if (meetingTabRef.current && !meetingTabRef.current.closed) {
+      meetingTabRef.current.close();
+      meetingTabRef.current = null;
+    }
+    fetchClasses();
+  };
+
   const toggle = (key) => {
     setToggles((current) => ({ ...current, [key]: !current[key] }));
   };
@@ -112,37 +167,18 @@ export default function LiveClasses() {
   // If a class is active, render the active class dashboard
   if (activeClass) {
     return (
-      <div className="lc-page" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 73px)", justifyContent: "center", alignItems: "center", background: "var(--surface)", textAlign: "center" }}>
-        <div style={{ padding: "40px", background: "var(--background)", borderRadius: "16px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)", maxWidth: "500px", width: "100%" }}>
-          <div style={{ display: "inline-block", background: "#FEE2E2", color: "#EF4444", padding: "8px 16px", borderRadius: "20px", fontWeight: "bold", marginBottom: "20px" }}>
-            <i className="fa-solid fa-video" style={{ marginRight: "8px" }}></i> 🔴 LIVE NOW
-          </div>
-          <h2 style={{ fontSize: "24px", marginBottom: "8px" }}>{activeClass.title}</h2>
-          <p style={{ color: "var(--muted)", marginBottom: "30px" }}>{activeClass.course}</p>
-          
-          <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-            <button 
-              onClick={() => { meetingTabRef.current = window.open(activeClass.meetingUrl, "_blank"); }}
-              className="lc-btn lc-btn-primary"
-              style={{ padding: "16px", fontSize: "16px", justifyContent: "center" }}
-            >
-              <i className="fa-solid fa-arrow-up-right-from-square"></i>
-              Enter Jitsi Meeting Room
-            </button>
-            <button 
-              onClick={() => handleEndClass(activeClass.id)}
-              className="lc-btn"
-              style={{ padding: "16px", fontSize: "16px", justifyContent: "center", background: "#EF4444", color: "white", border: "none" }}
-            >
-              <i className="fa-solid fa-phone-slash"></i>
-              End Class for All
-            </button>
-          </div>
-          <p style={{ fontSize: "13px", color: "var(--muted)", marginTop: "20px" }}>
-            Note: We open Jitsi in a new tab to bypass the 5-minute embedding restriction, giving you 100% free and unlimited meeting time!
-          </p>
-        </div>
-      </div>
+      <TeacherMeetingRoom
+        activeClass={activeClass}
+        currentUser={currentUser}
+        fetchClasses={fetchClasses}
+        jitsiReady={jitsiReady}
+        onEndClass={handleEndClass}
+        onReturn={returnToMeetingList}
+        openMeetingInTab={(meeting) => {
+          meetingTabRef.current = window.open(meetingUrlForClass(meeting), "_blank", "noopener,noreferrer");
+        }}
+        setJitsiReady={setJitsiReady}
+      />
     );
   }
 
@@ -161,7 +197,7 @@ export default function LiveClasses() {
   
   const activeCount = classes.filter(c => c.status === "active").length;
   const completedCount = classes.filter(c => c.status === "completed").length;
-  const totalStudents = classes.reduce((sum, c) => sum + (c.studentIds?.length || 0), 0);
+  const totalStudents = classes.reduce((sum, c) => sum + (c.enrolledCount ?? c.studentIds?.length ?? 0), 0);
 
   return (
     <div className="lc-page">
@@ -222,7 +258,8 @@ export default function LiveClasses() {
               <div className="lc-class-meta">
                 <span><i className="fa-regular fa-clock"></i>{formatClassTime(item)}</span>
                 <span><i className="fa-solid fa-hourglass-half"></i>{formatClassDuration(item)}</span>
-                <span><i className="fa-solid fa-users"></i>{item.studentIds?.length || 0} enrolled</span>
+                <span><i className="fa-solid fa-users"></i>{item.enrolledCount ?? item.studentIds?.length ?? 0} enrolled</span>
+                <span><i className="fa-solid fa-user-check"></i>{item.attendeeCount ?? 0} joined</span>
               </div>
               <div className="lc-class-actions">
                 <span className={`lc-status ${(item.status || 'scheduled').toLowerCase()}`}>
@@ -318,7 +355,7 @@ export default function LiveClasses() {
                 </div>
                 <div>
                   <h3>{item.title}</h3>
-                  <p>{item.studentIds?.length || 0} students enrolled</p>
+                  <p>{item.enrolledCount ?? item.studentIds?.length ?? 0} students enrolled</p>
                 </div>
               </article>
             ))}
@@ -349,7 +386,7 @@ export default function LiveClasses() {
                 </div>
                 <div style={{ display: 'flex', gap: '15px', fontSize: '13px', color: 'var(--muted)', marginTop: '15px' }}>
                   <span><i className="fa-regular fa-clock" style={{ marginRight: '5px' }}></i>{formatClassDate(item)}</span>
-                  <span><i className="fa-solid fa-users" style={{ marginRight: '5px' }}></i>{item.studentIds?.length || 0} attended</span>
+                  <span><i className="fa-solid fa-users" style={{ marginRight: '5px' }}></i>{item.attendeeCount ?? item.joinedStudents?.length ?? 0} attended</span>
                 </div>
               </article>
             ))}
@@ -384,6 +421,132 @@ export default function LiveClasses() {
       </section>
     </div>
   );
+}
+
+function TeacherMeetingRoom({
+  activeClass,
+  currentUser,
+  fetchClasses,
+  jitsiReady,
+  onEndClass,
+  onReturn,
+  openMeetingInTab,
+  setJitsiReady,
+}) {
+  const joinedStudents = activeClass.joinedStudents || [];
+  const enrolledCount = activeClass.enrolledCount ?? activeClass.studentIds?.length ?? 0;
+  const displayName = currentUser.name || "Teacher";
+
+  return (
+    <div className="lc-page" style={{ minHeight: "calc(100vh - 73px)", background: "var(--surface)" }}>
+      <section className="lc-section" style={{ display: "flex", flexDirection: "column", gap: "18px", minHeight: "calc(100vh - 110px)" }}>
+        <div className="lc-section-head" style={{ alignItems: "flex-start", gap: "16px" }}>
+          <div>
+            <span className="lc-eyebrow">Live now</span>
+            <h2>{activeClass.title}</h2>
+            <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>{activeClass.course}</p>
+          </div>
+          <div className="lc-header-actions">
+            <button onClick={() => openMeetingInTab(activeClass)} className="lc-btn" type="button">
+              <i className="fa-solid fa-arrow-up-right-from-square"></i>
+              Open in Tab
+            </button>
+            <button
+              onClick={onReturn}
+              className="lc-btn"
+              type="button"
+              style={{ background: "var(--muted)", color: "white", border: "none" }}
+            >
+              <i className="fa-solid fa-arrow-left"></i>
+              Return
+            </button>
+            <button
+              onClick={() => onEndClass(activeClass.id)}
+              className="lc-btn"
+              type="button"
+              style={{ background: "#EF4444", color: "white", border: "none" }}
+            >
+              <i className="fa-solid fa-phone-slash"></i>
+              End Class
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: "18px", flex: 1, minHeight: 0 }}>
+          <div style={{ position: "relative", minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A" }}>
+            {!jitsiReady && (
+              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "white", zIndex: 1 }}>
+                Loading Jitsi room...
+              </div>
+            )}
+            <JitsiMeeting
+              domain="meet.jit.si"
+              roomName={roomNameForClass(activeClass)}
+              configOverwrite={jitsiConfig}
+              interfaceConfigOverwrite={jitsiInterfaceConfig}
+              userInfo={{ displayName, email: currentUser.email || "" }}
+              onApiReady={(api) => {
+                setJitsiReady(true);
+                api.addListener?.("participantJoined", () => fetchClasses(true));
+                api.addListener?.("participantLeft", () => fetchClasses(true));
+              }}
+              onReadyToClose={onReturn}
+              getIFrameRef={(node) => {
+                node.style.height = "100%";
+                node.style.width = "100%";
+              }}
+            />
+          </div>
+
+          <aside style={{ border: "1px solid var(--border)", borderRadius: "14px", background: "var(--background)", padding: "18px", overflow: "auto" }}>
+            <span className="lc-eyebrow">Attendance</span>
+            <h3 style={{ margin: "8px 0 6px", color: "var(--dark)" }}>Joined Students</h3>
+            <p style={{ margin: "0 0 16px", color: "var(--muted)", fontSize: "13px" }}>
+              {joinedStudents.length} joined of {enrolledCount} enrolled
+            </p>
+            {joinedStudents.length === 0 ? (
+              <p className="sd-empty" style={{ margin: 0 }}>No students have joined yet.</p>
+            ) : (
+              <div style={{ display: "grid", gap: "10px" }}>
+                {joinedStudents.map((student) => (
+                  <div key={student.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px", border: "1px solid var(--border)", borderRadius: "10px", background: "var(--surface)" }}>
+                    <div style={{ width: "34px", height: "34px", borderRadius: "50%", display: "grid", placeItems: "center", background: "#DCFCE7", color: "#166534", fontWeight: 800 }}>
+                      {initialsForName(student.name)}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ display: "block", color: "var(--dark)", fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{student.name}</strong>
+                      <span style={{ color: "var(--muted)", fontSize: "12px" }}>Present</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function roomNameForClass(item) {
+  if (item?.roomName) return item.roomName;
+  const url = String(item?.meetingUrl || "");
+  const match = url.match(/meet\.jit\.si\/([^?#]+)/);
+  return match ? decodeURIComponent(match[1]) : `JawaEdtech-${item?.id || "LiveClass"}`;
+}
+
+function meetingUrlForClass(item) {
+  return `https://meet.jit.si/${encodeURIComponent(roomNameForClass(item))}`;
+}
+
+function initialsForName(name) {
+  return String(name || "Student")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "ST";
 }
 
 function getClassDate(item) {

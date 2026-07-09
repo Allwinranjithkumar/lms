@@ -1,27 +1,46 @@
 import { useState, useEffect, useRef } from "react";
-import { getLiveClasses, getSession } from "../../services/api";
+import { getLiveClasses, getSession, markLiveClassAttendance } from "../../services/api";
 import { JitsiMeeting } from "@jitsi/react-sdk";
+
+const jitsiConfig = {
+  prejoinPageEnabled: false,
+  startWithAudioMuted: false,
+  startWithVideoMuted: false,
+};
+
+const jitsiInterfaceConfig = {
+  SHOW_JITSI_WATERMARK: false,
+  SHOW_WATERMARK_FOR_GUESTS: false,
+};
 
 export default function LiveClasses() {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeClass, setActiveClass] = useState(null);
+  const [jitsiReady, setJitsiReady] = useState(false);
+  const [joiningClassId, setJoiningClassId] = useState("");
   const meetingTabRef = useRef(null);
   
-  const currentUser = getSession()?.user?.name || "Student";
+  const currentUser = getSession()?.user || {};
 
-  const fetchClasses = () => {
-    setLoading(true);
-    getLiveClasses()
-      .then((d) => setClasses(d.data || d || []))
+  const fetchClasses = (silent = false) => {
+    if (!silent) setLoading(true);
+    return getLiveClasses()
+      .then((d) => {
+        const classList = d.data || d || [];
+        setClasses(classList);
+        return classList;
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
   useEffect(() => {
     fetchClasses();
     // Poll for active classes every 5 seconds for faster reaction
-    const interval = setInterval(fetchClasses, 5000);
+    const interval = setInterval(() => fetchClasses(true), 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -43,12 +62,26 @@ export default function LiveClasses() {
     }
   }, [liveClasses, activeClass]);
 
-  const joinClass = (cls) => {
+  useEffect(() => {
+    setJitsiReady(false);
+  }, [activeClass?.id]);
+
+  const joinClass = async (cls) => {
     if (cls.status !== "active") {
       alert("This class hasn't started yet.");
       return;
     }
-    setActiveClass(cls);
+
+    try {
+      setJoiningClassId(cls.id);
+      const res = await markLiveClassAttendance(cls.id, { status: "present" });
+      setActiveClass(res.class || cls);
+      fetchClasses(true);
+    } catch (err) {
+      alert("Could not join class: " + (err.message || "Failed"));
+    } finally {
+      setJoiningClassId("");
+    }
   };
 
   const leaveClass = () => {
@@ -63,37 +96,17 @@ export default function LiveClasses() {
   // If a class is active, render the active class dashboard
   if (activeClass) {
     return (
-      <div className="slc-page" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 73px)", justifyContent: "center", alignItems: "center", background: "var(--surface)", textAlign: "center" }}>
-        <div style={{ padding: "40px", background: "var(--background)", borderRadius: "16px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)", maxWidth: "500px", width: "100%" }}>
-          <div style={{ display: "inline-block", background: "#FEE2E2", color: "#EF4444", padding: "8px 16px", borderRadius: "20px", fontWeight: "bold", marginBottom: "20px" }}>
-            <i className="fa-solid fa-video" style={{ marginRight: "8px" }}></i> 🔴 LIVE NOW
-          </div>
-          <h2 style={{ fontSize: "24px", marginBottom: "8px" }}>{activeClass.title}</h2>
-          <p style={{ color: "var(--muted)", marginBottom: "30px" }}>{activeClass.course}</p>
-          
-          <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-            <button 
-              onClick={() => { meetingTabRef.current = window.open(activeClass.meetingUrl, "_blank"); }}
-              className="slc-btn slc-btn-primary"
-              style={{ padding: "16px", fontSize: "16px", justifyContent: "center" }}
-            >
-              <i className="fa-solid fa-arrow-up-right-from-square"></i>
-              Enter Jitsi Meeting Room
-            </button>
-            <button 
-              onClick={leaveClass}
-              className="slc-btn"
-              style={{ padding: "16px", fontSize: "16px", justifyContent: "center", background: "var(--muted)", color: "white", border: "none" }}
-            >
-              <i className="fa-solid fa-arrow-left"></i>
-              Return to Dashboard
-            </button>
-          </div>
-          <p style={{ fontSize: "13px", color: "var(--muted)", marginTop: "20px" }}>
-            Note: We open Jitsi in a new tab to bypass the 5-minute embedding restriction, giving you 100% free and unlimited meeting time!
-          </p>
-        </div>
-      </div>
+      <StudentMeetingRoom
+        activeClass={activeClass}
+        currentUser={currentUser}
+        fetchClasses={fetchClasses}
+        jitsiReady={jitsiReady}
+        leaveClass={leaveClass}
+        openMeetingInTab={(meeting) => {
+          meetingTabRef.current = window.open(meetingUrlForClass(meeting), "_blank", "noopener,noreferrer");
+        }}
+        setJitsiReady={setJitsiReady}
+      />
     );
   }
 
@@ -116,10 +129,10 @@ export default function LiveClasses() {
             onClick={() => nextClass ? joinClass(nextClass) : alert("No classes available.")} 
             className="slc-btn slc-btn-primary" 
             type="button"
-            disabled={!nextClass || nextClass.status !== "active"}
-            style={{ opacity: (!nextClass || nextClass.status !== "active") ? 0.6 : 1 }}
+            disabled={!nextClass || nextClass.status !== "active" || joiningClassId === nextClass.id}
+            style={{ opacity: (!nextClass || nextClass.status !== "active" || joiningClassId === nextClass.id) ? 0.6 : 1 }}
           >
-            <i className="fa-solid fa-bolt"></i> Join Next Class
+            <i className="fa-solid fa-bolt"></i> {joiningClassId === nextClass?.id ? "Joining..." : "Join Next Class"}
           </button>
         </div>
       </section>
@@ -154,10 +167,13 @@ export default function LiveClasses() {
                 onClick={() => joinClass(nextClass)} 
                 className="slc-btn slc-btn-primary" 
                 type="button"
-                disabled={nextClass.status !== "active"}
-                style={{ opacity: nextClass.status !== 'active' ? 0.5 : 1, cursor: nextClass.status !== 'active' ? 'not-allowed' : 'pointer' }}
+                disabled={nextClass.status !== "active" || joiningClassId === nextClass.id}
+                style={{
+                  opacity: nextClass.status !== 'active' || joiningClassId === nextClass.id ? 0.5 : 1,
+                  cursor: nextClass.status !== 'active' || joiningClassId === nextClass.id ? 'not-allowed' : 'pointer',
+                }}
               >
-                {nextClass.status === 'active' ? 'Join Class Now' : 'Not Started Yet'}
+                {joiningClassId === nextClass.id ? "Joining..." : nextClass.status === 'active' ? 'Join Class Now' : 'Not Started Yet'}
               </button>
             </div>
           </div>
@@ -231,4 +247,82 @@ export default function LiveClasses() {
 
     </div>
   );
+}
+
+function StudentMeetingRoom({
+  activeClass,
+  currentUser,
+  fetchClasses,
+  jitsiReady,
+  leaveClass,
+  openMeetingInTab,
+  setJitsiReady,
+}) {
+  const displayName = currentUser.name || "Student";
+
+  return (
+    <div className="slc-page" style={{ minHeight: "calc(100vh - 73px)", background: "var(--surface)" }}>
+      <section className="slc-section" style={{ display: "flex", flexDirection: "column", gap: "18px", minHeight: "calc(100vh - 110px)" }}>
+        <div className="slc-section-head" style={{ alignItems: "flex-start", gap: "16px" }}>
+          <div>
+            <span className="slc-eyebrow">Live now</span>
+            <h2>{activeClass.title || "Live Class"}</h2>
+            <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>{activeClass.course || activeClass.teacher || "Instructor"}</p>
+          </div>
+          <div className="slc-header-actions">
+            <button onClick={() => openMeetingInTab(activeClass)} className="slc-btn" type="button">
+              <i className="fa-solid fa-arrow-up-right-from-square"></i>
+              Open in Tab
+            </button>
+            <button
+              onClick={leaveClass}
+              className="slc-btn"
+              type="button"
+              style={{ background: "var(--muted)", color: "white", border: "none" }}
+            >
+              <i className="fa-solid fa-arrow-left"></i>
+              Return
+            </button>
+          </div>
+        </div>
+
+        <div style={{ position: "relative", flex: 1, minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A" }}>
+          {!jitsiReady && (
+            <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "white", zIndex: 1 }}>
+              Loading Jitsi room...
+            </div>
+          )}
+          <JitsiMeeting
+            domain="meet.jit.si"
+            roomName={roomNameForClass(activeClass)}
+            configOverwrite={jitsiConfig}
+            interfaceConfigOverwrite={jitsiInterfaceConfig}
+            userInfo={{ displayName, email: currentUser.email || "" }}
+            onApiReady={(api) => {
+              setJitsiReady(true);
+              api.executeCommand?.("displayName", displayName);
+              api.addListener?.("participantJoined", () => fetchClasses(true));
+              api.addListener?.("participantLeft", () => fetchClasses(true));
+            }}
+            onReadyToClose={leaveClass}
+            getIFrameRef={(node) => {
+              node.style.height = "100%";
+              node.style.width = "100%";
+            }}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function roomNameForClass(item) {
+  if (item?.roomName) return item.roomName;
+  const url = String(item?.meetingUrl || "");
+  const match = url.match(/meet\.jit\.si\/([^?#]+)/);
+  return match ? decodeURIComponent(match[1]) : `JawaEdtech-${item?.id || "LiveClass"}`;
+}
+
+function meetingUrlForClass(item) {
+  return `https://meet.jit.si/${encodeURIComponent(roomNameForClass(item))}`;
 }
