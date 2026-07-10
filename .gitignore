@@ -6,6 +6,11 @@ node_modules/
 .env.*
 !.env.example
 
+# Video (JaaS/8x8) signing keys — never commit private keys
+*.pk
+*.pem
+*.pub
+
 # Build output
 dist/
 build/

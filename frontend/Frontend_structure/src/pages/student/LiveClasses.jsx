@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getLiveClasses, getSession, markLiveClassAttendance } from "../../services/api";
+import { getLiveClasses, getSession, markLiveClassAttendance, getJitsiConfig } from "../../services/api";
 import { JitsiMeeting } from "@jitsi/react-sdk";
 
 const jitsiConfig = {
@@ -259,6 +259,18 @@ function StudentMeetingRoom({
   setJitsiReady,
 }) {
   const displayName = currentUser.name || "Student";
+  const [meetConfig, setMeetConfig] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    getJitsiConfig()
+      .then((cfg) => { if (active) setMeetConfig(cfg); })
+      .catch(() => { if (active) setMeetConfig({ domain: "meet.jit.si", appId: "", token: "" }); });
+    return () => { active = false; };
+  }, []);
+
+  const baseRoom = roomNameForClass(activeClass);
+  const roomName = meetConfig?.appId ? `${meetConfig.appId}/${baseRoom}` : baseRoom;
 
   return (
     <div className="slc-page" style={{ minHeight: "calc(100vh - 73px)", background: "var(--surface)" }}>
@@ -287,29 +299,32 @@ function StudentMeetingRoom({
         </div>
 
         <div style={{ position: "relative", flex: 1, minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A" }}>
-          {!jitsiReady && (
+          {(!meetConfig || !jitsiReady) && (
             <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "white", zIndex: 1 }}>
               Loading Jitsi room...
             </div>
           )}
-          <JitsiMeeting
-            domain="meet.jit.si"
-            roomName={roomNameForClass(activeClass)}
-            configOverwrite={jitsiConfig}
-            interfaceConfigOverwrite={jitsiInterfaceConfig}
-            userInfo={{ displayName, email: currentUser.email || "" }}
-            onApiReady={(api) => {
-              setJitsiReady(true);
-              api.executeCommand?.("displayName", displayName);
-              api.addListener?.("participantJoined", () => fetchClasses(true));
-              api.addListener?.("participantLeft", () => fetchClasses(true));
-            }}
-            onReadyToClose={leaveClass}
-            getIFrameRef={(node) => {
-              node.style.height = "100%";
-              node.style.width = "100%";
-            }}
-          />
+          {meetConfig && (
+            <JitsiMeeting
+              domain={meetConfig.domain}
+              roomName={roomName}
+              jwt={meetConfig.token || undefined}
+              configOverwrite={jitsiConfig}
+              interfaceConfigOverwrite={jitsiInterfaceConfig}
+              userInfo={{ displayName, email: currentUser.email || "" }}
+              onApiReady={(api) => {
+                setJitsiReady(true);
+                api.executeCommand?.("displayName", displayName);
+                api.addListener?.("participantJoined", () => fetchClasses(true));
+                api.addListener?.("participantLeft", () => fetchClasses(true));
+              }}
+              onReadyToClose={leaveClass}
+              getIFrameRef={(node) => {
+                node.style.height = "100%";
+                node.style.width = "100%";
+              }}
+            />
+          )}
         </div>
       </section>
     </div>

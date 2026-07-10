@@ -5,6 +5,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const multer = require("multer");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -630,6 +631,19 @@ app.get("/api/live-classes", authenticate, asyncHandler(async (req, res) => {
   res.json({ data: data.map((item) => formatLiveClass(item, store)) });
 }));
 
+// Returns the video config for the current user. When JaaS (8x8) keys are set
+// in the environment, it mints a signed JWT so the teacher joins as moderator
+// and everyone lands in the SAME conference. Otherwise it falls back to the
+// public meet.jit.si server so the app keeps working during setup.
+app.get("/api/live-classes/jitsi-config", authenticate, asyncHandler(async (req, res) => {
+  const token = signJaasToken(req.user);
+  if (token) {
+    res.json({ domain: "8x8.vc", appId: process.env.JAAS_APP_ID, token });
+  } else {
+    res.json({ domain: "meet.jit.si", appId: "", token: "" });
+  }
+}));
+
 app.post("/api/live-classes", authenticate, requireRole("teacher"), asyncHandler(async (req, res) => {
   const store = await loadStore();
   const course = resolveTeacherCourse(req.user.id, req.body.courseId, store);
@@ -1062,6 +1076,10 @@ app.use((err, req, res, next) => {
 const port = Number(process.env.PORT || 8000);
 app.listen(port, () => {
   console.log(`Smart Learning Platform API running on http://localhost:${port}`);
+  const jaasOn = Boolean(process.env.JAAS_APP_ID && process.env.JAAS_API_KEY_ID && jaasPrivateKey());
+  console.log(jaasOn
+    ? "[video] JaaS (8x8) configured — live classes use the authenticated server."
+    : "[video] JaaS NOT configured — live classes fall back to public meet.jit.si.");
 });
 
 // Adds a message to a conversation (within a Prisma transaction `tx`), updating
@@ -1089,6 +1107,59 @@ function authPayload(user) {
     token: signUserToken(user),
     user: sanitizeUser(user),
   };
+}
+
+// Mints a JaaS (8x8) JWT for the video call. Teachers get moderator rights so
+// the room opens immediately for everyone; students join as participants.
+// Returns null when JaaS is not configured (caller falls back to meet.jit.si).
+function jaasPrivateKey() {
+  const keyPath = process.env.JAAS_PRIVATE_KEY_PATH || "";
+  if (keyPath) {
+    try {
+      return fs.readFileSync(path.resolve(keyPath), "utf8");
+    } catch {
+      return "";
+    }
+  }
+  return (process.env.JAAS_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+}
+
+function signJaasToken(user) {
+  const appId = process.env.JAAS_APP_ID || "";
+  const apiKeyId = process.env.JAAS_API_KEY_ID || "";
+  const privateKey = jaasPrivateKey();
+  if (!appId || !apiKeyId || !privateKey) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const isTeacher = user.role === "teacher";
+  const payload = {
+    aud: "jitsi",
+    iss: "chat",
+    sub: appId,
+    room: "*",
+    iat: now,
+    nbf: now - 10,
+    exp: now + 60 * 60 * 3,
+    context: {
+      user: {
+        id: user.id,
+        name: user.name || (isTeacher ? "Teacher" : "Student"),
+        email: user.email || "",
+        moderator: isTeacher,
+      },
+      features: {
+        recording: isTeacher,
+        livestreaming: false,
+        transcription: false,
+        "outbound-call": false,
+      },
+    },
+  };
+
+  return jwt.sign(payload, privateKey, {
+    algorithm: "RS256",
+    header: { kid: `${appId}/${apiKeyId}`, typ: "JWT" },
+  });
 }
 
 function sanitizeUser(user) {

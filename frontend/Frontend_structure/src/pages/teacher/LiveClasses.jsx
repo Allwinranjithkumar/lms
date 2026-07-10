@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getLiveClasses, createLiveClass, startLiveClass, endLiveClass, getTeacherCourses, getSession } from "../../services/api";
+import { getLiveClasses, createLiveClass, startLiveClass, endLiveClass, getTeacherCourses, getSession, getJitsiConfig } from "../../services/api";
 import { JitsiMeeting } from "@jitsi/react-sdk";
 
 const defaultToggles = {
@@ -436,6 +436,18 @@ function TeacherMeetingRoom({
   const joinedStudents = activeClass.joinedStudents || [];
   const enrolledCount = activeClass.enrolledCount ?? activeClass.studentIds?.length ?? 0;
   const displayName = currentUser.name || "Teacher";
+  const [meetConfig, setMeetConfig] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    getJitsiConfig()
+      .then((cfg) => { if (active) setMeetConfig(cfg); })
+      .catch(() => { if (active) setMeetConfig({ domain: "meet.jit.si", appId: "", token: "" }); });
+    return () => { active = false; };
+  }, []);
+
+  const baseRoom = roomNameForClass(activeClass);
+  const roomName = meetConfig?.appId ? `${meetConfig.appId}/${baseRoom}` : baseRoom;
 
   return (
     <div className="lc-page" style={{ minHeight: "calc(100vh - 73px)", background: "var(--surface)" }}>
@@ -474,28 +486,31 @@ function TeacherMeetingRoom({
 
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: "18px", flex: 1, minHeight: 0 }}>
           <div style={{ position: "relative", minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A" }}>
-            {!jitsiReady && (
+            {(!meetConfig || !jitsiReady) && (
               <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "white", zIndex: 1 }}>
                 Loading Jitsi room...
               </div>
             )}
-            <JitsiMeeting
-              domain="meet.jit.si"
-              roomName={roomNameForClass(activeClass)}
-              configOverwrite={jitsiConfig}
-              interfaceConfigOverwrite={jitsiInterfaceConfig}
-              userInfo={{ displayName, email: currentUser.email || "" }}
-              onApiReady={(api) => {
-                setJitsiReady(true);
-                api.addListener?.("participantJoined", () => fetchClasses(true));
-                api.addListener?.("participantLeft", () => fetchClasses(true));
-              }}
-              onReadyToClose={onReturn}
-              getIFrameRef={(node) => {
-                node.style.height = "100%";
-                node.style.width = "100%";
-              }}
-            />
+            {meetConfig && (
+              <JitsiMeeting
+                domain={meetConfig.domain}
+                roomName={roomName}
+                jwt={meetConfig.token || undefined}
+                configOverwrite={jitsiConfig}
+                interfaceConfigOverwrite={jitsiInterfaceConfig}
+                userInfo={{ displayName, email: currentUser.email || "" }}
+                onApiReady={(api) => {
+                  setJitsiReady(true);
+                  api.addListener?.("participantJoined", () => fetchClasses(true));
+                  api.addListener?.("participantLeft", () => fetchClasses(true));
+                }}
+                onReadyToClose={onReturn}
+                getIFrameRef={(node) => {
+                  node.style.height = "100%";
+                  node.style.width = "100%";
+                }}
+              />
+            )}
           </div>
 
           <aside style={{ border: "1px solid var(--border)", borderRadius: "14px", background: "var(--background)", padding: "18px", overflow: "auto" }}>
