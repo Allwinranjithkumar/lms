@@ -44,8 +44,11 @@ export default function LiveClasses() {
     return () => clearInterval(interval);
   }, []);
 
-  // Filter classes
-  const liveClasses = classes.filter(c => c.status === "active");
+  // Filter classes. Active classes are sorted newest-first so "Join" always
+  // targets the room the teacher is currently hosting, not a stale older one.
+  const newestFirst = (a, b) =>
+    new Date(b.createdAt || b.scheduledAt || 0) - new Date(a.createdAt || a.scheduledAt || 0);
+  const liveClasses = classes.filter((c) => c.status === "active").sort(newestFirst);
   const upcoming = classes.filter((c) => c.status === "scheduled");
   const past = classes.filter((c) => c.status === "completed");
   const nextClass = liveClasses[0] || upcoming[0] || null;

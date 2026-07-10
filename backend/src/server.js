@@ -651,6 +651,18 @@ app.post("/api/live-classes", authenticate, requireRole("teacher"), asyncHandler
     ? store.enrollments.filter((item) => item.courseId === course.id).map((item) => item.studentId)
     : [];
   const schedule = liveClassScheduleFromBody(req.body);
+  const requestedStatus = cleanString(req.body.status) || "active";
+
+  // A teacher can only host one live room at a time. When starting a new
+  // active/instant class, close any of their other still-active classes so
+  // students can't accidentally join a stale, empty room.
+  if (requestedStatus === "active") {
+    await prisma.liveClass.updateMany({
+      where: { teacherId: req.user.id, status: "active" },
+      data: { status: "completed" },
+    });
+  }
+
   // Generate a unique, hard-to-guess Jitsi room name
   const randomSuffix = Math.random().toString(36).substring(2, 10);
   const roomSlug = `${(course?.title || "Class").replace(/[^a-zA-Z0-9]/g, "")}-${randomSuffix}`;
@@ -666,7 +678,7 @@ app.post("/api/live-classes", authenticate, requireRole("teacher"), asyncHandler
       time: schedule.time,
       duration: normalizeDuration(req.body.duration),
       description: cleanString(req.body.description || req.body.desc),
-      status: cleanString(req.body.status) || "active", // Default to active for instant classes
+      status: requestedStatus, // Default to active for instant classes
       roomName,
       meetingUrl: `https://meet.jit.si/${roomName}`,
       settings: req.body.settings || {},
