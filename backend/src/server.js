@@ -1116,12 +1116,42 @@ function jaasPrivateKey() {
   const keyPath = process.env.JAAS_PRIVATE_KEY_PATH || "";
   if (keyPath) {
     try {
-      return fs.readFileSync(path.resolve(keyPath), "utf8");
+      return normalizePrivateKey(fs.readFileSync(path.resolve(keyPath), "utf8"));
     } catch {
       return "";
     }
   }
-  return (process.env.JAAS_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  return normalizePrivateKey(process.env.JAAS_PRIVATE_KEY || "");
+}
+
+// Rebuilds a valid PEM from a private key that may arrive mangled from a
+// hosting dashboard: literal "\n", real newlines, all-on-one-line, or even
+// with the BEGIN/END header lines stripped. Returns "" if there's no key.
+function normalizePrivateKey(raw) {
+  let key = String(raw || "").trim();
+  if (!key) return "";
+
+  // Turn literal backslash-n into real newlines, normalize CRLF.
+  key = key.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\r/g, "");
+
+  const headerRe = /-----BEGIN [^-]+-----/;
+  const footerRe = /-----END [^-]+-----/;
+
+  // Pull out the base64 body regardless of how the surrounding text is spaced.
+  let label = "PRIVATE KEY";
+  const labelMatch = key.match(/-----BEGIN ([^-]+)-----/);
+  if (labelMatch) label = labelMatch[1].trim();
+
+  let body = key
+    .replace(headerRe, "")
+    .replace(footerRe, "")
+    .replace(/\s+/g, ""); // drop every space/newline inside the body
+
+  if (!body) return "";
+
+  // Re-wrap the base64 body at 64 chars and re-attach clean header/footer.
+  const wrapped = body.match(/.{1,64}/g).join("\n");
+  return `-----BEGIN ${label}-----\n${wrapped}\n-----END ${label}-----\n`;
 }
 
 function signJaasToken(user) {
