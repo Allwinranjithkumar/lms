@@ -695,6 +695,14 @@ app.patch("/api/live-classes/:id/start", authenticate, requireRole("teacher"), a
     throw new ApiError(403, "You can only manage your own live classes.");
   }
 
+  // Enforce one live room per teacher across every host path. Starting a class
+  // closes the teacher's other still-active classes so students always converge
+  // on the room the teacher is actually hosting instead of a stale, empty one.
+  await prisma.liveClass.updateMany({
+    where: { teacherId: req.user.id, status: "active", id: { not: liveClass.id } },
+    data: { status: "completed" },
+  });
+
   const updated = await prisma.liveClass.update({
     where: { id: liveClass.id },
     data: { status: "active" },

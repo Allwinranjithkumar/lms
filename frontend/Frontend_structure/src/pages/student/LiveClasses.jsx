@@ -46,8 +46,14 @@ export default function LiveClasses() {
 
   // Filter classes. Active classes are sorted newest-first so "Join" always
   // targets the room the teacher is currently hosting, not a stale older one.
-  const newestFirst = (a, b) =>
-    new Date(b.createdAt || b.scheduledAt || 0) - new Date(a.createdAt || a.scheduledAt || 0);
+  // The LiveClass record has no createdAt column, so we order by scheduledAt and
+  // fall back to the id — Prisma's cuid() is timestamp-prefixed, so a lexical
+  // compare of ids is a reliable newest-first tiebreaker.
+  const newestFirst = (a, b) => {
+    const byTime = new Date(b.scheduledAt || 0) - new Date(a.scheduledAt || 0);
+    if (byTime !== 0) return byTime;
+    return String(b.id || "").localeCompare(String(a.id || ""));
+  };
   const liveClasses = classes.filter((c) => c.status === "active").sort(newestFirst);
   const upcoming = classes.filter((c) => c.status === "scheduled");
   const past = classes.filter((c) => c.status === "completed");
