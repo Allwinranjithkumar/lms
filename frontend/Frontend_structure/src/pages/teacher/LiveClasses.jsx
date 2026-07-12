@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getLiveClasses, createLiveClass, startLiveClass, endLiveClass, getTeacherCourses, getSession, getJitsiConfig } from "../../services/api";
-import { JitsiMeeting } from "@jitsi/react-sdk";
+import { getLiveClasses, createLiveClass, startLiveClass, endLiveClass, getTeacherCourses } from "../../services/api";
 
 const defaultToggles = {
   recording: true,
@@ -11,35 +10,23 @@ const defaultToggles = {
   attendance: true,
 };
 
-const jitsiConfig = {
-  prejoinPageEnabled: false,
-  startWithAudioMuted: false,
-  startWithVideoMuted: false,
-};
-
-const jitsiInterfaceConfig = {
-  SHOW_JITSI_WATERMARK: false,
-  SHOW_WATERMARK_FOR_GUESTS: false,
-};
-
 export default function LiveClasses() {
   const [toggles, setToggles] = useState(defaultToggles);
   const [classes, setClasses] = useState([]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeClass, setActiveClass] = useState(null); // The class currently being hosted
-  const [jitsiReady, setJitsiReady] = useState(false);
   const meetingTabRef = useRef(null);
-  const currentUser = getSession()?.user || {};
-  
+
   // Default course selection will be the first one once loaded
-  const [formData, setFormData] = useState({ 
-    title: "", 
-    courseId: "", 
-    date: new Date().toISOString().split('T')[0], 
-    time: "10:00", 
-    duration: 60, 
-    desc: "" 
+  const [formData, setFormData] = useState({
+    title: "",
+    courseId: "",
+    date: new Date().toISOString().split('T')[0],
+    time: "10:00",
+    duration: 60,
+    desc: "",
+    meetingUrl: "",
   });
 
   const fetchClasses = (silent = false) => {
@@ -88,10 +75,6 @@ export default function LiveClasses() {
     return () => clearInterval(interval);
   }, [activeClass?.id]);
 
-  useEffect(() => {
-    setJitsiReady(false);
-  }, [activeClass?.id]);
-
   const handleSchedule = async (e, instant = false) => {
     if (e) e.preventDefault();
     if (!formData.courseId && courses.length > 0) {
@@ -108,6 +91,7 @@ export default function LiveClasses() {
         description: formData.desc,
         status: instant ? "active" : "scheduled",
         settings: toggles,
+        meetingUrl: instant ? "" : formData.meetingUrl,
       };
 
       const res = await createLiveClass(payload);
@@ -169,15 +153,13 @@ export default function LiveClasses() {
     return (
       <TeacherMeetingRoom
         activeClass={activeClass}
-        currentUser={currentUser}
         fetchClasses={fetchClasses}
-        jitsiReady={jitsiReady}
         onEndClass={handleEndClass}
         onReturn={returnToMeetingList}
         openMeetingInTab={(meeting) => {
-          meetingTabRef.current = window.open(meetingUrlForClass(meeting), "_blank", "noopener,noreferrer");
+          const url = meetingUrlForClass(meeting);
+          if (url) meetingTabRef.current = window.open(url, "_blank", "noopener,noreferrer");
         }}
-        setJitsiReady={setJitsiReady}
       />
     );
   }
@@ -205,7 +187,7 @@ export default function LiveClasses() {
         <div>
           <span className="lc-eyebrow">AI-powered live classroom</span>
           <h1>Live Classes</h1>
-          <p>Schedule, manage, and host AI-powered virtual classrooms via Jitsi.</p>
+          <p>Schedule, manage, and host virtual classrooms with Google Meet.</p>
         </div>
         <div className="lc-header-actions">
           <button onClick={startInstantClass} className="lc-btn lc-btn-primary" type="button" disabled={courses.length === 0}>
@@ -312,6 +294,27 @@ export default function LiveClasses() {
               <span>Description</span>
               <textarea value={formData.desc} onChange={e => setFormData({...formData, desc: e.target.value})} placeholder="Review concepts..." />
             </label>
+            <div className="lc-full" style={{ display: "grid", gap: "10px" }}>
+              <button
+                type="button"
+                className="lc-btn"
+                onClick={() => window.open(googleCalendarUrl(formData), "_blank", "noopener,noreferrer")}
+              >
+                <i className="fa-solid fa-calendar-plus"></i>
+                Create Google Meet in Calendar
+              </button>
+              <label>
+                <span>Google Meet link</span>
+                <input
+                  value={formData.meetingUrl}
+                  onChange={e => setFormData({ ...formData, meetingUrl: e.target.value })}
+                  placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                />
+              </label>
+              <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>
+                Click the button, add “Google Meet” to the event in Google Calendar and save, then copy the meet.google.com link back into the field above before scheduling.
+              </p>
+            </div>
           </div>
           <div className="lc-toggle-grid">
             {[
@@ -425,29 +428,13 @@ export default function LiveClasses() {
 
 function TeacherMeetingRoom({
   activeClass,
-  currentUser,
-  fetchClasses,
-  jitsiReady,
   onEndClass,
   onReturn,
   openMeetingInTab,
-  setJitsiReady,
 }) {
   const joinedStudents = activeClass.joinedStudents || [];
   const enrolledCount = activeClass.enrolledCount ?? activeClass.studentIds?.length ?? 0;
-  const displayName = currentUser.name || "Teacher";
-  const [meetConfig, setMeetConfig] = useState(null);
-
-  useEffect(() => {
-    let active = true;
-    getJitsiConfig()
-      .then((cfg) => { if (active) setMeetConfig(cfg); })
-      .catch(() => { if (active) setMeetConfig({ domain: "meet.jit.si", appId: "", token: "" }); });
-    return () => { active = false; };
-  }, []);
-
-  const baseRoom = roomNameForClass(activeClass);
-  const roomName = meetConfig?.appId ? `${meetConfig.appId}/${baseRoom}` : baseRoom;
+  const meetingUrl = meetingUrlForClass(activeClass);
 
   return (
     <div className="lc-page" style={{ minHeight: "calc(100vh - 73px)", background: "var(--surface)" }}>
@@ -485,32 +472,26 @@ function TeacherMeetingRoom({
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: "18px", flex: 1, minHeight: 0 }}>
-          <div style={{ position: "relative", minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A" }}>
-            {(!meetConfig || !jitsiReady) && (
-              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "white", zIndex: 1 }}>
-                Loading Jitsi room...
-              </div>
-            )}
-            {meetConfig && (
-              <JitsiMeeting
-                domain={meetConfig.domain}
-                roomName={roomName}
-                jwt={meetConfig.token || undefined}
-                configOverwrite={jitsiConfig}
-                interfaceConfigOverwrite={jitsiInterfaceConfig}
-                userInfo={{ displayName, email: currentUser.email || "" }}
-                onApiReady={(api) => {
-                  setJitsiReady(true);
-                  api.addListener?.("participantJoined", () => fetchClasses(true));
-                  api.addListener?.("participantLeft", () => fetchClasses(true));
-                }}
-                onReadyToClose={onReturn}
-                getIFrameRef={(node) => {
-                  node.style.height = "100%";
-                  node.style.width = "100%";
-                }}
-              />
-            )}
+          <div style={{ position: "relative", minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A", display: "grid", placeItems: "center", padding: "24px" }}>
+            <div style={{ textAlign: "center", color: "white", maxWidth: "420px" }}>
+              <i className="fa-solid fa-video" style={{ fontSize: "40px", marginBottom: "16px", color: "#34D399" }}></i>
+              <h3 style={{ margin: "0 0 8px" }}>{activeClass.title}</h3>
+              {meetingUrl ? (
+                <>
+                  <p style={{ color: "#CBD5E1", margin: "0 0 20px", fontSize: "14px" }}>
+                    Google Meet opens in a new tab. Students who join see the same link.
+                  </p>
+                  <button onClick={() => openMeetingInTab(activeClass)} className="lc-btn lc-btn-primary" type="button">
+                    <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                    Join on Google Meet
+                  </button>
+                </>
+              ) : (
+                <p style={{ color: "#FCA5A5", margin: 0, fontSize: "14px" }}>
+                  No Google Meet link was set for this class. Edit the class and add a meet.google.com link.
+                </p>
+              )}
+            </div>
           </div>
 
           <aside style={{ border: "1px solid var(--border)", borderRadius: "14px", background: "var(--background)", padding: "18px", overflow: "auto" }}>
@@ -543,15 +524,29 @@ function TeacherMeetingRoom({
   );
 }
 
-function roomNameForClass(item) {
-  if (item?.roomName) return item.roomName;
-  const url = String(item?.meetingUrl || "");
-  const match = url.match(/meet\.jit\.si\/([^?#]+)/);
-  return match ? decodeURIComponent(match[1]) : `JawaEdtech-${item?.id || "LiveClass"}`;
+// Builds a Google Calendar "create event" link pre-filled from the schedule
+// form. Opening it lets the teacher add a Google Meet to the event and save;
+// they then paste the resulting meet.google.com link back into the form.
+function googleCalendarUrl({ title, date, time, duration, desc } = {}) {
+  const params = new URLSearchParams({ action: "TEMPLATE" });
+  if (title) params.set("text", title);
+  if (desc) params.set("details", desc);
+  const start = date && time ? new Date(`${date}T${time}`) : null;
+  if (start && !Number.isNaN(start.valueOf())) {
+    const minutes = Number(duration) || 60;
+    const end = new Date(start.getTime() + minutes * 60000);
+    params.set("dates", `${toCalendarStamp(start)}/${toCalendarStamp(end)}`);
+  }
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function toCalendarStamp(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
 }
 
 function meetingUrlForClass(item) {
-  return `https://meet.jit.si/${encodeURIComponent(roomNameForClass(item))}`;
+  return item?.meetingUrl || "";
 }
 
 function initialsForName(name) {

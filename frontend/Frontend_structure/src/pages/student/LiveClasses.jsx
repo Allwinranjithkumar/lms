@@ -1,27 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { getLiveClasses, getSession, markLiveClassAttendance, getJitsiConfig } from "../../services/api";
-import { JitsiMeeting } from "@jitsi/react-sdk";
-
-const jitsiConfig = {
-  prejoinPageEnabled: false,
-  startWithAudioMuted: false,
-  startWithVideoMuted: false,
-};
-
-const jitsiInterfaceConfig = {
-  SHOW_JITSI_WATERMARK: false,
-  SHOW_WATERMARK_FOR_GUESTS: false,
-};
+import { getLiveClasses, markLiveClassAttendance } from "../../services/api";
 
 export default function LiveClasses() {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeClass, setActiveClass] = useState(null);
-  const [jitsiReady, setJitsiReady] = useState(false);
   const [joiningClassId, setJoiningClassId] = useState("");
   const meetingTabRef = useRef(null);
-  
-  const currentUser = getSession()?.user || {};
 
   const fetchClasses = (silent = false) => {
     if (!silent) setLoading(true);
@@ -71,10 +56,6 @@ export default function LiveClasses() {
     }
   }, [liveClasses, activeClass]);
 
-  useEffect(() => {
-    setJitsiReady(false);
-  }, [activeClass?.id]);
-
   const joinClass = async (cls) => {
     if (cls.status !== "active") {
       alert("This class hasn't started yet.");
@@ -107,14 +88,11 @@ export default function LiveClasses() {
     return (
       <StudentMeetingRoom
         activeClass={activeClass}
-        currentUser={currentUser}
-        fetchClasses={fetchClasses}
-        jitsiReady={jitsiReady}
         leaveClass={leaveClass}
         openMeetingInTab={(meeting) => {
-          meetingTabRef.current = window.open(meetingUrlForClass(meeting), "_blank", "noopener,noreferrer");
+          const url = meetingUrlForClass(meeting);
+          if (url) meetingTabRef.current = window.open(url, "_blank", "noopener,noreferrer");
         }}
-        setJitsiReady={setJitsiReady}
       />
     );
   }
@@ -260,26 +238,10 @@ export default function LiveClasses() {
 
 function StudentMeetingRoom({
   activeClass,
-  currentUser,
-  fetchClasses,
-  jitsiReady,
   leaveClass,
   openMeetingInTab,
-  setJitsiReady,
 }) {
-  const displayName = currentUser.name || "Student";
-  const [meetConfig, setMeetConfig] = useState(null);
-
-  useEffect(() => {
-    let active = true;
-    getJitsiConfig()
-      .then((cfg) => { if (active) setMeetConfig(cfg); })
-      .catch(() => { if (active) setMeetConfig({ domain: "meet.jit.si", appId: "", token: "" }); });
-    return () => { active = false; };
-  }, []);
-
-  const baseRoom = roomNameForClass(activeClass);
-  const roomName = meetConfig?.appId ? `${meetConfig.appId}/${baseRoom}` : baseRoom;
+  const meetingUrl = meetingUrlForClass(activeClass);
 
   return (
     <div className="slc-page" style={{ minHeight: "calc(100vh - 73px)", background: "var(--surface)" }}>
@@ -291,10 +253,6 @@ function StudentMeetingRoom({
             <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>{activeClass.course || activeClass.teacher || "Instructor"}</p>
           </div>
           <div className="slc-header-actions">
-            <button onClick={() => openMeetingInTab(activeClass)} className="slc-btn" type="button">
-              <i className="fa-solid fa-arrow-up-right-from-square"></i>
-              Open in Tab
-            </button>
             <button
               onClick={leaveClass}
               className="slc-btn"
@@ -307,46 +265,32 @@ function StudentMeetingRoom({
           </div>
         </div>
 
-        <div style={{ position: "relative", flex: 1, minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A" }}>
-          {(!meetConfig || !jitsiReady) && (
-            <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "white", zIndex: 1 }}>
-              Loading Jitsi room...
-            </div>
-          )}
-          {meetConfig && (
-            <JitsiMeeting
-              domain={meetConfig.domain}
-              roomName={roomName}
-              jwt={meetConfig.token || undefined}
-              configOverwrite={jitsiConfig}
-              interfaceConfigOverwrite={jitsiInterfaceConfig}
-              userInfo={{ displayName, email: currentUser.email || "" }}
-              onApiReady={(api) => {
-                setJitsiReady(true);
-                api.executeCommand?.("displayName", displayName);
-                api.addListener?.("participantJoined", () => fetchClasses(true));
-                api.addListener?.("participantLeft", () => fetchClasses(true));
-              }}
-              onReadyToClose={leaveClass}
-              getIFrameRef={(node) => {
-                node.style.height = "100%";
-                node.style.width = "100%";
-              }}
-            />
-          )}
+        <div style={{ position: "relative", flex: 1, minHeight: "560px", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden", background: "#0F172A", display: "grid", placeItems: "center", padding: "24px" }}>
+          <div style={{ textAlign: "center", color: "white", maxWidth: "420px" }}>
+            <i className="fa-solid fa-video" style={{ fontSize: "40px", marginBottom: "16px", color: "#34D399" }}></i>
+            <h3 style={{ margin: "0 0 8px" }}>{activeClass.title || "Live Class"}</h3>
+            {meetingUrl ? (
+              <>
+                <p style={{ color: "#CBD5E1", margin: "0 0 20px", fontSize: "14px" }}>
+                  Your class is on Google Meet. Click below to open it in a new tab.
+                </p>
+                <button onClick={() => openMeetingInTab(activeClass)} className="slc-btn slc-btn-primary" type="button">
+                  <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                  Join on Google Meet
+                </button>
+              </>
+            ) : (
+              <p style={{ color: "#FCA5A5", margin: 0, fontSize: "14px" }}>
+                The instructor hasn't added a Google Meet link for this class yet.
+              </p>
+            )}
+          </div>
         </div>
       </section>
     </div>
   );
 }
 
-function roomNameForClass(item) {
-  if (item?.roomName) return item.roomName;
-  const url = String(item?.meetingUrl || "");
-  const match = url.match(/meet\.jit\.si\/([^?#]+)/);
-  return match ? decodeURIComponent(match[1]) : `JawaEdtech-${item?.id || "LiveClass"}`;
-}
-
 function meetingUrlForClass(item) {
-  return `https://meet.jit.si/${encodeURIComponent(roomNameForClass(item))}`;
+  return item?.meetingUrl || "";
 }

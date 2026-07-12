@@ -166,10 +166,6 @@ export function getLiveClasses() {
   return apiRequest("/live-classes");
 }
 
-export function getJitsiConfig() {
-  return apiRequest("/live-classes/jitsi-config");
-}
-
 export function createLiveClass(payload) {
   return apiRequest("/live-classes", { method: "POST", body: payload });
 }
