@@ -283,13 +283,13 @@ export default function LiveClasses() {
               <button
                 type="button"
                 className="lc-btn"
-                onClick={() => window.open(googleCalendarUrl(formData), "_blank", "noopener,noreferrer")}
+                onClick={() => window.open("https://meet.new", "_blank", "noopener,noreferrer")}
               >
-                <i className="fa-solid fa-calendar-plus"></i>
-                Create Google Meet in Calendar
+                <i className="fa-solid fa-video"></i>
+                Create Google Meet link
               </button>
               <label>
-                <span>Google Meet or Calendar link</span>
+                <span>Google Meet link</span>
                 <input
                   value={formData.meetingUrl}
                   onChange={e => setFormData({ ...formData, meetingUrl: e.target.value })}
@@ -297,7 +297,7 @@ export default function LiveClasses() {
                 />
               </label>
               <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>
-                Click the button, add “Google Meet” to the event in Google Calendar and save, then paste the link back into the field above — either the meet.google.com link or the Google Calendar event link works.
+                Click the button to open a fresh Google Meet, copy its meet.google.com link, and paste it here. When you create the schedule, every enrolled student is notified with the link.
               </p>
             </div>
           </div>
@@ -330,35 +330,6 @@ export default function LiveClasses() {
           </div>
         </section>
       </section>
-
-      <section className="lc-section">
-          <div className="lc-section-head">
-            <div>
-              <span className="lc-eyebrow">History</span>
-              <h2>Past Sessions</h2>
-            </div>
-          </div>
-          <div className="lc-recording-grid">
-            {classes.filter(c => c.status === "completed").length === 0 && <p className="sd-empty">No past sessions.</p>}
-            {classes.filter(c => c.status === "completed").map((item) => (
-              <article key={item.id} className="lc-recording-card" style={{ padding: '20px', background: 'var(--surface)', borderRadius: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '10px' }}>
-                  <div className="lc-recording-thumb" style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B7280' }}>
-                    <i className="fa-solid fa-calendar-check"></i>
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '16px' }}>{item.title}</h3>
-                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>{item.course}</p>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '15px', fontSize: '13px', color: 'var(--muted)', marginTop: '15px' }}>
-                  <span><i className="fa-regular fa-clock" style={{ marginRight: '5px' }}></i>{formatClassDate(item)}</span>
-                  <span><i className="fa-solid fa-users" style={{ marginRight: '5px' }}></i>{item.attendeeCount ?? item.joinedStudents?.length ?? 0} attended</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
     </div>
   );
 }
@@ -459,27 +430,6 @@ function TeacherMeetingRoom({
       </section>
     </div>
   );
-}
-
-// Builds a Google Calendar "create event" link pre-filled from the schedule
-// form. Opening it lets the teacher add a Google Meet to the event and save;
-// they then paste the resulting meet.google.com link back into the form.
-function googleCalendarUrl({ title, date, time, duration, desc } = {}) {
-  const params = new URLSearchParams({ action: "TEMPLATE" });
-  if (title) params.set("text", title);
-  if (desc) params.set("details", desc);
-  const start = date && time ? new Date(`${date}T${time}`) : null;
-  if (start && !Number.isNaN(start.valueOf())) {
-    const minutes = Number(duration) || 60;
-    const end = new Date(start.getTime() + minutes * 60000);
-    params.set("dates", `${toCalendarStamp(start)}/${toCalendarStamp(end)}`);
-  }
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
-
-function toCalendarStamp(d) {
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
 }
 
 function meetingUrlForClass(item) {
