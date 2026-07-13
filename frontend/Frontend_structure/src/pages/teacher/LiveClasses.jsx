@@ -1,16 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getLiveClasses, createLiveClass, startLiveClass, endLiveClass, getTeacherCourses } from "../../services/api";
 
-const defaultToggles = {
-  recording: true,
-  chat: true,
-  screenShare: true,
-  whiteboard: true,
-  attendance: true,
-};
-
 export default function LiveClasses() {
-  const [toggles, setToggles] = useState(defaultToggles);
   const [classes, setClasses] = useState([]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,7 +80,6 @@ export default function LiveClasses() {
         duration: `${formData.duration} min`,
         description: formData.desc,
         status: instant ? "active" : "scheduled",
-        settings: toggles,
         meetingUrl: instant ? "" : formData.meetingUrl,
       };
 
@@ -141,10 +131,6 @@ export default function LiveClasses() {
       meetingTabRef.current = null;
     }
     fetchClasses();
-  };
-
-  const toggle = (key) => {
-    setToggles((current) => ({ ...current, [key]: !current[key] }));
   };
 
   // If a class is active, render the active class dashboard
@@ -315,25 +301,6 @@ export default function LiveClasses() {
               </p>
             </div>
           </div>
-          <div className="lc-toggle-grid">
-            {[
-              ["recording", "Enable Recording"],
-              ["chat", "Enable Chat"],
-              ["screenShare", "Enable Screen Share"],
-              ["whiteboard", "Enable Whiteboard"],
-              ["attendance", "Track Attendance"],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                className={`lc-toggle ${toggles[key] ? "on" : ""}`}
-                type="button"
-                onClick={() => toggle(key)}
-              >
-                <span>{label}</span>
-                <span className="lc-toggle-knob"></span>
-              </button>
-            ))}
-          </div>
           <button className="lc-btn lc-btn-primary lc-create-btn" type="submit" disabled={courses.length === 0}>
             Create Schedule
           </button>
@@ -364,8 +331,7 @@ export default function LiveClasses() {
         </section>
       </section>
 
-      <section className="lc-split-grid">
-        <section className="lc-section">
+      <section className="lc-section">
           <div className="lc-section-head">
             <div>
               <span className="lc-eyebrow">History</span>
@@ -393,33 +359,6 @@ export default function LiveClasses() {
             ))}
           </div>
         </section>
-
-        <section className="lc-section">
-          <div className="lc-section-head">
-            <div>
-              <span className="lc-eyebrow">Analytics</span>
-              <h2>Attendance Analytics</h2>
-            </div>
-          </div>
-          <div className="lc-analytics-list">
-            {[
-              { label: "Average Attendance", value: "91%", percent: 91 },
-              { label: "On-Time Joiners", value: "85%", percent: 85 },
-              { label: "Engagement Score", value: "78%", percent: 78 },
-            ].map((item) => (
-              <div key={item.label} className="lc-analytics-item" style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-                <div className="lc-progress" style={{ height: '8px', background: 'var(--border)', borderRadius: '4px', overflow: 'hidden' }}>
-                  <span style={{ display: 'block', height: '100%', width: `${item.percent}%`, background: 'var(--primary)', borderRadius: '4px' }}></span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </section>
     </div>
   );
 }
