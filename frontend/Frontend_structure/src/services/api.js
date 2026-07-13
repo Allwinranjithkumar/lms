@@ -166,10 +166,6 @@ export function getLiveClasses() {
   return apiRequest("/live-classes");
 }
 
-export function getJitsiConfig() {
-  return apiRequest("/live-classes/jitsi-config");
-}
-
 export function createLiveClass(payload) {
   return apiRequest("/live-classes", { method: "POST", body: payload });
 }
@@ -283,16 +279,4 @@ export function verifyCertificate(credentialId) {
 
 export function getStudents() {
   return apiRequest("/teacher/students");
-}
-
-
-
-// ─── AI ────────────────────────────────────────────────────────────────────
-
-export function runTeacherAITool(payload) {
-  return apiRequest("/ai/teacher-tool", { method: "POST", body: payload });
-}
-
-export function runStudentAI(payload) {
-  return apiRequest("/ai/student-assistant", { method: "POST", body: payload });
 }

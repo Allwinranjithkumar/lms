@@ -5,7 +5,6 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const multer = require("multer");
 require("dotenv").config();
-const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -631,19 +630,6 @@ app.get("/api/live-classes", authenticate, asyncHandler(async (req, res) => {
   res.json({ data: data.map((item) => formatLiveClass(item, store)) });
 }));
 
-// Returns the video config for the current user. When JaaS (8x8) keys are set
-// in the environment, it mints a signed JWT so the teacher joins as moderator
-// and everyone lands in the SAME conference. Otherwise it falls back to the
-// public meet.jit.si server so the app keeps working during setup.
-app.get("/api/live-classes/jitsi-config", authenticate, asyncHandler(async (req, res) => {
-  const token = signJaasToken(req.user);
-  if (token) {
-    res.json({ domain: "8x8.vc", appId: process.env.JAAS_APP_ID, token });
-  } else {
-    res.json({ domain: "meet.jit.si", appId: "", token: "" });
-  }
-}));
-
 app.post("/api/live-classes", authenticate, requireRole("teacher"), asyncHandler(async (req, res) => {
   const store = await loadStore();
   const course = resolveTeacherCourse(req.user.id, req.body.courseId, store);
@@ -663,10 +649,10 @@ app.post("/api/live-classes", authenticate, requireRole("teacher"), asyncHandler
     });
   }
 
-  // Generate a unique, hard-to-guess Jitsi room name
-  const randomSuffix = Math.random().toString(36).substring(2, 10);
-  const roomSlug = `${(course?.title || "Class").replace(/[^a-zA-Z0-9]/g, "")}-${randomSuffix}`;
-  const roomName = `JawaEdtech-${roomSlug}`;
+  // Google Meet link is created by the teacher in Google Calendar and pasted
+  // into the schedule form. A Meet link can only be minted by Google, so we
+  // validate and store the pasted link as-is (no auto-generated room).
+  const meetingUrl = normalizeMeetUrl(req.body.meetingUrl || req.body.meetUrl);
 
   const liveClass = await prisma.liveClass.create({
     data: {
@@ -679,12 +665,32 @@ app.post("/api/live-classes", authenticate, requireRole("teacher"), asyncHandler
       duration: normalizeDuration(req.body.duration),
       description: cleanString(req.body.description || req.body.desc),
       status: requestedStatus, // Default to active for instant classes
-      roomName,
-      meetingUrl: `https://meet.jit.si/${roomName}`,
+      roomName: null,
+      meetingUrl,
       settings: req.body.settings || {},
       studentIds,
     },
   });
+
+  // Reach every enrolled student the moment the class is scheduled, mirroring
+  // the announcement-notification pattern used for course messages.
+  if (studentIds.length) {
+    const whenLabel = [schedule.date, schedule.time].filter(Boolean).join(" ");
+    await prisma.notification.createMany({
+      data: studentIds.map((studentId) => ({
+        userId: studentId,
+        type: "live-class",
+        icon: "fa-solid fa-video",
+        color: "#DCFCE7",
+        title: `Live class scheduled: ${course?.title || liveClass.course}`,
+        body: `${liveClass.title}${whenLabel ? ` — ${whenLabel}` : ""}. Join on Google Meet.`,
+        time: "Just now",
+        read: false,
+        category: "Classes",
+      })),
+    });
+  }
+
   res.status(201).json({ data: formatLiveClass(liveClass, await loadStore()) });
 }));
 
@@ -1096,10 +1102,7 @@ app.use((err, req, res, next) => {
 const port = Number(process.env.PORT || 8000);
 app.listen(port, () => {
   console.log(`Smart Learning Platform API running on http://localhost:${port}`);
-  const jaasOn = Boolean(process.env.JAAS_APP_ID && process.env.JAAS_API_KEY_ID && jaasPrivateKey());
-  console.log(jaasOn
-    ? "[video] JaaS (8x8) configured — live classes use the authenticated server."
-    : "[video] JaaS NOT configured — live classes fall back to public meet.jit.si.");
+  console.log("[video] Live classes use Google Meet links entered when scheduling.");
 });
 
 // Adds a message to a conversation (within a Prisma transaction `tx`), updating
@@ -1129,89 +1132,6 @@ function authPayload(user) {
   };
 }
 
-// Mints a JaaS (8x8) JWT for the video call. Teachers get moderator rights so
-// the room opens immediately for everyone; students join as participants.
-// Returns null when JaaS is not configured (caller falls back to meet.jit.si).
-function jaasPrivateKey() {
-  const keyPath = process.env.JAAS_PRIVATE_KEY_PATH || "";
-  if (keyPath) {
-    try {
-      return normalizePrivateKey(fs.readFileSync(path.resolve(keyPath), "utf8"));
-    } catch {
-      return "";
-    }
-  }
-  return normalizePrivateKey(process.env.JAAS_PRIVATE_KEY || "");
-}
-
-// Rebuilds a valid PEM from a private key that may arrive mangled from a
-// hosting dashboard: literal "\n", real newlines, all-on-one-line, or even
-// with the BEGIN/END header lines stripped. Returns "" if there's no key.
-function normalizePrivateKey(raw) {
-  let key = String(raw || "").trim();
-  if (!key) return "";
-
-  // Turn literal backslash-n into real newlines, normalize CRLF.
-  key = key.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\r/g, "");
-
-  const headerRe = /-----BEGIN [^-]+-----/;
-  const footerRe = /-----END [^-]+-----/;
-
-  // Pull out the base64 body regardless of how the surrounding text is spaced.
-  let label = "PRIVATE KEY";
-  const labelMatch = key.match(/-----BEGIN ([^-]+)-----/);
-  if (labelMatch) label = labelMatch[1].trim();
-
-  let body = key
-    .replace(headerRe, "")
-    .replace(footerRe, "")
-    .replace(/\s+/g, ""); // drop every space/newline inside the body
-
-  if (!body) return "";
-
-  // Re-wrap the base64 body at 64 chars and re-attach clean header/footer.
-  const wrapped = body.match(/.{1,64}/g).join("\n");
-  return `-----BEGIN ${label}-----\n${wrapped}\n-----END ${label}-----\n`;
-}
-
-function signJaasToken(user) {
-  const appId = process.env.JAAS_APP_ID || "";
-  const apiKeyId = process.env.JAAS_API_KEY_ID || "";
-  const privateKey = jaasPrivateKey();
-  if (!appId || !apiKeyId || !privateKey) return null;
-
-  const now = Math.floor(Date.now() / 1000);
-  const isTeacher = user.role === "teacher";
-  const payload = {
-    aud: "jitsi",
-    iss: "chat",
-    sub: appId,
-    room: "*",
-    iat: now,
-    nbf: now - 10,
-    exp: now + 60 * 60 * 3,
-    context: {
-      user: {
-        id: user.id,
-        name: user.name || (isTeacher ? "Teacher" : "Student"),
-        email: user.email || "",
-        moderator: isTeacher,
-      },
-      features: {
-        recording: isTeacher,
-        livestreaming: false,
-        transcription: false,
-        "outbound-call": false,
-      },
-    },
-  };
-
-  return jwt.sign(payload, privateKey, {
-    algorithm: "RS256",
-    header: { kid: `${appId}/${apiKeyId}`, typ: "JWT" },
-  });
-}
-
 function sanitizeUser(user) {
   const { passwordHash, ...safeUser } = user;
   return safeUser;
@@ -1235,6 +1155,18 @@ function profileUpdatesFromBody(body, role) {
 function cleanString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+}
+
+// Accepts a Google Meet link the teacher pastes from Google Calendar.
+// Returns "" when empty (e.g. instant class with no link yet); throws when a
+// non-empty value isn't a real meet.google.com URL so typos are caught early.
+function normalizeMeetUrl(value) {
+  const url = cleanString(value);
+  if (!url) return "";
+  if (!/^https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(url)) {
+    throw new ApiError(400, "Enter a valid Google Meet link (https://meet.google.com/...).");
+  }
+  return url;
 }
 
 function toNonNegativeNumber(value, fallback = 0) {

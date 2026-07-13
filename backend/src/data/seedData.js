@@ -210,7 +210,7 @@ function createSeedStore() {
       time: "10:00 AM",
       duration: "60 min",
       status: "Live",
-      meetingUrl: "https://meet.jit.si/smart-learning-ai-basics",
+      meetingUrl: "https://meet.google.com/aaa-bbbb-ccc",
       studentIds: ["student_1", "student_2", "student_3"],
     },
     {
@@ -222,7 +222,7 @@ function createSeedStore() {
       time: "11:30 AM",
       duration: "75 min",
       status: "Upcoming",
-      meetingUrl: "https://meet.jit.si/smart-learning-dbms",
+      meetingUrl: "https://meet.google.com/ddd-eeee-fff",
       studentIds: ["student_1", "student_2"],
     },
   ];

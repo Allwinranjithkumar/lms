@@ -16,7 +16,6 @@ import LiveClasses from "./pages/teacher/LiveClasses";
 import Assignments from "./pages/teacher/Assignments";
 import Students from "./pages/teacher/Students";
 import Analytics from "./pages/teacher/Analytics";
-import AITools from "./pages/teacher/AITools";
 import Resources from "./pages/teacher/Resources";
 import Messages from "./pages/teacher/Messages";
 import Notifications from "./pages/teacher/Notifications";
@@ -33,7 +32,6 @@ import ResourcesStudent from "./pages/student/Resources";
 import MessagesStudent from "./pages/student/Messages";
 import NotificationsStudent from "./pages/student/Notifications";
 import StudentSettings from "./pages/student/Settings";
-import StudentAIAssistant from "./pages/student/AIAssistant";
 import TeacherCertificates from "./pages/teacher/Certificates";
 import { isAuthorizedForRole } from "./services/api";
 
@@ -139,9 +137,6 @@ function AppRoutes() {
   <Route path="notifications" element={<NotificationsStudent />} />
 
   <Route path="settings" element={<StudentSettings />} />
-  
-  <Route path="ai-assistant" element={<StudentAIAssistant />} />
-
 
 
 </Route>
@@ -167,8 +162,6 @@ function AppRoutes() {
   <Route path="students" element={<Students />} />
 
   <Route path="analytics" element={<Analytics />} />
-
-  <Route path="ai-tools" element={<AITools />} />
 
   <Route path="resources" element={<Resources />} />
 

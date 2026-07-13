@@ -16,7 +16,6 @@ const navItems = [
   ]},
   { section: "Tools", items: [
     { icon: "fa-solid fa-chart-line", label: "Analytics", path: "/teacher/analytics" },
-    { icon: "fa-solid fa-wand-magic-sparkles", label: "AI Tools", path: "/teacher/ai-tools" },
     { icon: "fa-solid fa-folder-open", label: "Resources", path: "/teacher/resources" },
   ]},
   { section: "Account", items: [

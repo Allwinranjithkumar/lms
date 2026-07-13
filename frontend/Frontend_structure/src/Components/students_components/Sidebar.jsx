@@ -16,7 +16,6 @@ const nav = [
     section: "Learning",
     items: [
       { icon: "fa-solid fa-folder-open", label: "Resources", page: "resources" },
-      { icon: "fa-solid fa-wand-magic-sparkles", label: "AI Assistant", page: "ai" },
     ],
   },
   {
@@ -43,7 +42,6 @@ const routes = {
   grades: "/student/grades",
   certificates: "/student/certificates",
   resources: "/student/resources",
-  ai: "/student/ai-assistant",
   messages: "/student/messages",
   notifications: "/student/notifications",
   settings: "/student/settings",
