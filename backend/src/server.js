@@ -1157,14 +1157,17 @@ function cleanString(value) {
   return String(value).trim();
 }
 
-// Accepts a Google Meet link the teacher pastes from Google Calendar.
-// Returns "" when empty (e.g. instant class with no link yet); throws when a
-// non-empty value isn't a real meet.google.com URL so typos are caught early.
+// Accepts the link a teacher pastes from Google Calendar. This can be either
+// the direct Meet link (meet.google.com/...) or the Google Calendar event link
+// (calendar.google.com/... or calendar.app.google/...) that Calendar hands back
+// after adding "Google Meet" to an event. Returns "" when empty (e.g. instant
+// class with no link yet); throws when a non-empty value isn't one of these so
+// typos are caught early.
 function normalizeMeetUrl(value) {
   const url = cleanString(value);
   if (!url) return "";
-  if (!/^https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(url)) {
-    throw new ApiError(400, "Enter a valid Google Meet link (https://meet.google.com/...).");
+  if (!/^https:\/\/(meet\.google\.com|calendar\.google\.com|calendar\.app\.google)\/[\w/?=&.%-]+/i.test(url)) {
+    throw new ApiError(400, "Enter a valid Google Meet or Google Calendar link.");
   }
   return url;
 }

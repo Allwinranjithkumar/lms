@@ -6,7 +6,6 @@ const defaultToggles = {
   chat: true,
   screenShare: true,
   whiteboard: true,
-  aiAssistant: true,
   attendance: true,
 };
 
@@ -185,7 +184,7 @@ export default function LiveClasses() {
     <div className="lc-page">
       <section className="lc-header">
         <div>
-          <span className="lc-eyebrow">AI-powered live classroom</span>
+          <span className="lc-eyebrow">Virtual live classroom</span>
           <h1>Live Classes</h1>
           <p>Schedule, manage, and host virtual classrooms with Google Meet.</p>
         </div>
@@ -304,7 +303,7 @@ export default function LiveClasses() {
                 Create Google Meet in Calendar
               </button>
               <label>
-                <span>Google Meet link</span>
+                <span>Google Meet or Calendar link</span>
                 <input
                   value={formData.meetingUrl}
                   onChange={e => setFormData({ ...formData, meetingUrl: e.target.value })}
@@ -312,7 +311,7 @@ export default function LiveClasses() {
                 />
               </label>
               <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>
-                Click the button, add “Google Meet” to the event in Google Calendar and save, then copy the meet.google.com link back into the field above before scheduling.
+                Click the button, add “Google Meet” to the event in Google Calendar and save, then paste the link back into the field above — either the meet.google.com link or the Google Calendar event link works.
               </p>
             </div>
           </div>
@@ -322,7 +321,6 @@ export default function LiveClasses() {
               ["chat", "Enable Chat"],
               ["screenShare", "Enable Screen Share"],
               ["whiteboard", "Enable Whiteboard"],
-              ["aiAssistant", "Enable AI Assistant"],
               ["attendance", "Track Attendance"],
             ].map(([key, label]) => (
               <button
